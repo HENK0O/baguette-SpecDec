@@ -96,6 +96,7 @@ def generate_speculative_cached(
     target_passes = draft_passes = 0
     target_seconds = draft_seconds = 0.0
     first_token_at = 0.0
+    pending_target_token: int | None = None
     synchronize(device)
     start = time.perf_counter()
 
@@ -132,12 +133,25 @@ def generate_speculative_cached(
         K = len(proposals)
         proposed += K
         blocks += 1
-        proposal_tensor = torch.tensor([proposals], dtype=torch.long, device=device)
+        if pending_target_token is None:
+            verification_ids = proposals
+            verification_pos = position
+        else:
+            # Verify the token emitted at the previous block boundary together
+            # with the new proposals. This needs only one target pass per block.
+            verification_ids = [pending_target_token, *proposals]
+            verification_pos = position - 1
+        proposal_tensor = torch.tensor([verification_ids], dtype=torch.long, device=device)
         t0 = time.perf_counter()
-        verification_logits = forward_all(target, proposal_tensor, target_caches, position)
-        p_vectors = [probabilities(target_next, temperature, top_k, top_p)]
-        p_vectors += [probabilities(verification_logits[0, i, :], temperature, top_k, top_p)
-                      for i in range(K)]
+        verification_logits = forward_all(target, proposal_tensor, target_caches,
+                                          verification_pos)
+        if pending_target_token is None:
+            p_vectors = [probabilities(target_next, temperature, top_k, top_p)]
+            p_vectors += [probabilities(verification_logits[0, i, :], temperature,
+                                        top_k, top_p) for i in range(K)]
+        else:
+            p_vectors = [probabilities(verification_logits[0, i, :], temperature,
+                                        top_k, top_p) for i in range(K + 1)]
         synchronize(device)
         target_seconds += time.perf_counter() - t0
         target_passes += 1
@@ -175,16 +189,12 @@ def generate_speculative_cached(
         if stopped or len(generated) == max_new_tokens:
             break
 
-        # The one newly sampled correction/bonus has not yet entered either
-        # cache. Reuse accepted proposal states, then overwrite stale suffixes.
+        # The correction/bonus enters the draft cache now. The target defers it
+        # to the next verification pass and processes it with that block.
         last_token = generated[-1]
+        pending_target_token = last_token
         last_tensor = torch.tensor([[last_token]], dtype=torch.long, device=device)
         next_position = position + accepted_this_block
-        t0 = time.perf_counter()
-        target_next = forward_all(target, last_tensor, target_caches, next_position)[0, -1, :]
-        synchronize(device)
-        target_seconds += time.perf_counter() - t0
-        target_passes += 1
         t0 = time.perf_counter()
         draft_next = forward_all(draft, last_tensor, draft_caches, next_position)[0, -1, :]
         synchronize(device)

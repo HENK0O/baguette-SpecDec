@@ -33,11 +33,14 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--cache", action="store_true", help="use attention KV caches for both models")
     parser.add_argument("--output", type=Path, help="write measured results as JSON")
     args = parser.parse_args()
     if any(k < 1 for k in args.draft_lengths):
         parser.error("draft lengths must be positive")
+    if args.warmup_runs < 0:
+        parser.error("warmup-runs must be nonnegative")
 
     assert_tokenizer_compatible(args.tokenizer, args.draft_tokenizer)
     if args.device == "auto":
@@ -60,12 +63,18 @@ def main() -> None:
                     eos_id=target.cfg.eos_id)
     baseline_fn = generate_cached if args.cache else generate
     speculative_fn = generate_speculative_cached if args.cache else generate_speculative
+    warmup_settings = {**settings, "max_new_tokens": min(4, args.max_new_tokens)}
+    for _ in range(args.warmup_runs):
+        baseline_fn(target, ids, **warmup_settings)
+        for K in args.draft_lengths:
+            speculative_fn(target, draft, ids, draft_length=K, **warmup_settings)
     baseline = baseline_fn(target, ids, **settings)
     results = {
         "prompt": args.prompt,
         "device": name,
         "seed": args.seed,
         "cache": args.cache,
+        "warmup_runs": args.warmup_runs,
         "target_checkpoint": str(args.target_checkpoint),
         "draft_checkpoint": str(args.draft_checkpoint),
         "baseline": {

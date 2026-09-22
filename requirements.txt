@@ -1,2 +1,4 @@
 torch>=2.1
 tokenizers>=0.15
+numpy
+tqdm

@@ -24,6 +24,7 @@ def run_trials(
     top_ks: list[int],
     seeds: list[int],
     cache: bool,
+    warmup_runs: int = 1,
 ) -> list[dict]:
     """Measure baseline once and each K once for every other combination."""
     if not all((encoded_prompts, generation_lengths, draft_lengths,
@@ -31,10 +32,20 @@ def run_trials(
         raise ValueError("all experiment grid lists must be nonempty")
     if any(n < 1 for n in generation_lengths + draft_lengths):
         raise ValueError("generation and draft lengths must be positive")
+    if warmup_runs < 0:
+        raise ValueError("warmup_runs must be nonnegative")
     baseline_fn = generate_cached if cache else generate
     spec_fn = generate_speculative_cached if cache else generate_speculative
     target_params = sum(p.numel() for p in target.parameters())
     draft_params = sum(p.numel() for p in draft.parameters())
+    warmup_prompt = encoded_prompts[0][1]
+    warmup_settings = dict(max_new_tokens=min(4, generation_lengths[0]),
+                           temperature=temperatures[0], top_p=top_ps[0],
+                           top_k=top_ks[0], seed=seeds[0], eos_id=target.cfg.eos_id)
+    for _ in range(warmup_runs):
+        baseline_fn(target, warmup_prompt, **warmup_settings)
+        for K in draft_lengths:
+            spec_fn(target, draft, warmup_prompt, draft_length=K, **warmup_settings)
     rows: list[dict] = []
     for (prompt, ids), n, temperature, top_p, top_k, seed in product(
         encoded_prompts, generation_lengths, temperatures, top_ps, top_ks, seeds
@@ -49,6 +60,7 @@ def run_trials(
                 "target_parameters": target_params,
                 "draft_parameters": draft_params,
                 "cache": cache,
+                "warmup_runs": warmup_runs,
                 "prompt": prompt,
                 "prompt_tokens": len(ids),
                 "max_new_tokens": n,

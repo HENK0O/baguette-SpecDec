@@ -27,6 +27,7 @@ def main() -> None:
     parser.add_argument("--output-json", type=Path)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--cache", action="store_true")
+    parser.add_argument("--warmup-runs", type=int, default=1)
     args = parser.parse_args()
 
     config = json.loads(args.config.read_text(encoding="utf-8"))
@@ -65,6 +66,7 @@ def main() -> None:
             top_ps=config["top_ps"],
             top_ks=config["top_ks"],
             seeds=config["seeds"], cache=args.cache,
+            warmup_runs=args.warmup_runs,
         ))
         del draft
     if not rows:

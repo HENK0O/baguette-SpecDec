@@ -67,8 +67,34 @@ BAGUETTE_SOURCE=/chemin/vers/baguette python -m unittest discover -s tests -v
 
 ## Suite prévue
 
-1. Entraîner ou fournir un modèle brouillon plus petit avec **le même tokenizer et les mêmes IDs** que le modèle cible.
+1. Poursuivre l'entraînement et la distillation d'un brouillon plus petit avec **le même tokenizer et les mêmes IDs** que le modèle cible. Les fichiers `LLM/data/train.bin` présents avant ce projet utilisent un autre tokenizer ; `scripts/prepare_draft_corpus.py` recrée le corpus à partir des textes bruts avec celui du modèle cible, dans un nouveau dossier.
 2. Exécuter la grille d'expériences sur de vrais brouillons compatibles et analyser la dispersion et le coût par configuration. Aucun gain de vitesse n'est revendiqué avant ces mesures.
 3. Étudier le retour arrière de l'état DeltaNet avant de prendre en charge les modèles hybrides.
 
 Les tests couvrent la normalisation, la reproductibilité, la correction résiduelle, une vérification statistique sur un modèle jouet, l'alignement des logits, et l'équivalence du cache avec un passage complet. Les tests d'intégration du cache sont ignorés si `BAGUETTE_SOURCE` ne pointe pas sur le dépôt Baguette.
+
+## Préparer et entraîner un brouillon compatible
+
+La préparation suivante ne retélécharge rien et n'écrase pas le corpus Baguette existant :
+
+```bash
+python scripts/prepare_draft_corpus.py \
+  --baguette-source ../LLM \
+  --target-checkpoint ../LLM/baguette-123m-sft.pt \
+  --tokenizer ../LLM/tokenizer.json \
+  --output-dir ../LLM/data/draft-123m-tokenizer
+```
+
+`manifest.json` enregistre l'empreinte du tokenizer et les sources. Le dossier de sortie doit être vide avant le lancement. Pour entraîner directement par distillation, sans checkpoint de départ :
+
+```bash
+python scripts/distill_draft.py \
+  --baguette-source ../LLM \
+  --target-checkpoint ../LLM/baguette-123m-sft.pt \
+  --tokenizer ../LLM/tokenizer.json \
+  --data-dir ../LLM/data/draft-123m-tokenizer \
+  --out-dir ../LLM/runs/specdec-draft-nano/distill \
+  --steps 3000 --batch-size 8 --seq-len 128 --device auto
+```
+
+La perte principale est `KL(cible || brouillon)` sur la distribution du prochain token ; une petite part de cross-entropy utilise le token réel du corpus. Les checkpoints de poids `draft-stepN.pt` peuvent être utilisés directement par `scripts/benchmark.py` avec `--draft-tokenizer ../LLM/data/draft-123m-tokenizer/tokenizer.json`. Les poids et les jeux de données restent hors de ce dépôt GitHub.

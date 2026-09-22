@@ -57,6 +57,7 @@ class CacheTests(unittest.TestCase):
         cached_spec = generate_speculative_cached(self.model, self.model, prompt,
                                                  max_new_tokens=5, draft_length=2, seed=7)
         self.assertEqual(cached_spec.token_ids, reference_spec.token_ids)
+        self.assertEqual(cached_spec.target_forward_passes, cached_spec.blocks + 1)
 
     def test_cached_rejection_matches_reference(self):
         from model import ModelConfig, build_model
@@ -73,6 +74,7 @@ class CacheTests(unittest.TestCase):
         cached = generate_speculative_cached(self.model, draft, [1, 2], **options)
         self.assertEqual(cached.token_ids, reference.token_ids)
         self.assertLess(cached.accepted, cached.proposed)
+        self.assertEqual(cached.target_forward_passes, cached.blocks + 1)
 
 
 if __name__ == "__main__":
