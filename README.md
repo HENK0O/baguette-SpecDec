@@ -101,4 +101,4 @@ python scripts/distill_draft.py \
   --steps 3000 --batch-size 8 --seq-len 128 --device auto
 ```
 
-La perte principale est `KL(cible || brouillon)` sur la distribution du prochain token ; une petite part de cross-entropy utilise le token réel du corpus. Les checkpoints de poids `draft-stepN.pt` peuvent être utilisés directement par `scripts/benchmark.py` avec `--draft-tokenizer ../LLM/data/draft-123m-tokenizer/tokenizer.json`. Les poids et les jeux de données restent hors de ce dépôt GitHub.
+La perte principale est `KL(cible || brouillon)` sur la distribution du prochain token ; une petite part de cross-entropy utilise le token réel du corpus. Le checkpoint conservé après l'expérience se trouve dans `../LLM/runs/specdec-draft-nano/distill-run1/draft-step3000.pt`. Il peut être utilisé par `scripts/benchmark.py` avec `--draft-tokenizer ../LLM/runs/specdec-draft-nano/tokenizer.json`. Les poids et les jeux de données restent hors de ce dépôt GitHub. Le corpus réencodé est reproductible avec la commande ci-dessus et peut être supprimé après l'entraînement.
