@@ -1,85 +1,78 @@
 # baguette-SpecDec
 
-Un moteur de décodage spéculatif pour [Baguette](https://github.com/HENK0O/baguette), développé étape par étape. Les modèles, poids et tokenizer sont fournis par des chemins externes ; ce dépôt ne les copie pas.
+Ce dépôt est un projet étudiant autour du **décodage spéculatif** appliqué à [Baguette](https://github.com/HENK0O/baguette), un modèle de langue entraîné en français. Le but est de voir si un petit modèle peut proposer des tokens assez vite pour accélérer la génération d'un modèle plus grand.
 
-## Phase 1 : référence autorégressive
+Le code fonctionne et les premiers tests sont reproductibles. Pour l'instant, la version spéculative est encore plus lente que la génération classique sur la machine utilisée. Le projet sert donc aussi à comprendre *pourquoi* une technique prometteuse sur le papier ne donne pas automatiquement un gain de vitesse en pratique.
 
-Pour chaque nouveau token, on donne au modèle tous les tokens déjà présents. Le dernier vecteur de logits, de taille `[vocabulaire]`, définit la distribution du prochain token. En mode greedy, on prend son maximum. Sinon, on divise par la température, on filtre éventuellement avec top-k et top-p, on normalise par softmax puis on tire un token. La graine fixe le tirage pour rendre une exécution reproductible.
+## Comment ça marche ?
 
-Sans `--cache`, cette version recalcule le préfixe à chaque étape : elle est simple à contrôler. Avec `--cache`, elle réutilise les clés et valeurs des couches d'attention. Les mesures couvrent la génération uniquement, après chargement du modèle. Le temps du premier token comprend le premier passage du modèle et le tirage. Le débit est `tokens générés / durée totale` ; il dépend du matériel, de la longueur du prompt et des options de sampling.
+La génération classique produit un token à la fois avec le modèle cible. Avec le décodage spéculatif, un petit modèle appelé **brouillon** propose plusieurs tokens. Le modèle cible les vérifie ensuite en un seul passage. Les propositions acceptées sont conservées ; au premier refus, un token est tiré à partir d'une distribution de correction.
+
+L'acceptation suit la règle `min(1, p(x) / q(x))`, où `p` est la probabilité donnée par la cible et `q` celle du brouillon. Cette correction permet de garder la même distribution de sortie que le modèle cible, même quand le brouillon se trompe. Le code utilise aussi un cache des clés et valeurs de l'attention pour éviter de recalculer tout le début du texte à chaque étape.
+
+## Ce qui est déjà fait
+
+- Une génération classique pour servir de référence, avec ou sans cache.
+- Une implémentation du décodage spéculatif avec échantillonnage et correction exacte.
+- Des scripts pour préparer les données, entraîner un brouillon compatible et comparer les vitesses.
+- Des tests sur la correction, l'alignement des logits et le cache.
+
+Le cache fonctionne actuellement avec les modèles Baguette configurés avec `hybrid=False`. La gestion de l'état des couches DeltaNet reste à faire.
+
+## Essayer le projet
+
+Les commandes ci-dessous partent du dossier `baguette-SpecDec` et supposent que le dépôt Baguette se trouve juste à côté, dans `../LLM`. Les poids des modèles ne sont pas inclus dans ce dépôt GitHub.
+
+Installer les dépendances :
 
 ```bash
 pip install -r requirements.txt
+```
+
+Tester d'abord la génération classique :
+
+```bash
 python scripts/baseline.py \
   --baguette-source ../LLM \
   --target-checkpoint ../LLM/baguette-123m-sft.pt \
   --tokenizer ../LLM/tokenizer.json \
   --prompt "Bonjour, je suis" \
-  --max-new-tokens 16 --greedy
+  --max-new-tokens 32 --cache
 ```
 
-Le checkpoint doit contenir les clés `model_cfg` et `model`, comme l'export de Baguette. `--baguette-source` désigne le dossier contenant son `model.py`. Seuls des checkpoints de confiance doivent être chargés. Le vocabulaire du tokenizer est vérifié contre la configuration du modèle. Le programme refuse une génération qui dépasse la fenêtre de contexte.
-
-Pour le sampling, utiliser par exemple `--temperature 0.5 --top-k 20 --top-p 0.95 --seed 42`. `--greedy` ignore les réglages de sampling. Le programme affiche du JSON avec le texte produit et les trois mesures de temps/débit.
-
-## Décodage spéculatif exact
-
-Le brouillon tire une suite de `K` tokens dans ses distributions `q_i`. Un seul passage cible sur le préfixe et cette suite donne les distributions `p_i` correspondant à chaque proposition, puis celle du token supplémentaire. Le décalage est important : si le préfixe contient `T` tokens, `logits[T-1+i]` prédit la proposition numéro `i+1`.
-
-Pour une proposition `x`, on l'accepte avec la probabilité `min(1, p_i(x)/q_i(x))`. Si elle est rejetée, le token de correction vient de `r_i(x) = max(0, p_i(x)-q_i(x)) / Σ_y max(0, p_i(y)-q_i(y))`. La masse conservée par acceptation est `min(p_i,q_i)`. La masse de rejet redistribuée par `r_i` est `(p_i-q_i)_+`. Leur somme vaut donc `p_i` pour chaque token : le tirage final suit exactement la loi cible. Les deux modèles appliquent les mêmes règles de température, top-k et top-p avant ce calcul.
-
-Le cache stocke, pour chaque couche d'attention, K et V de forme `[batch, n_kv_head, max_len, head_dim]`. Après un rejet, les entrées après le préfixe accepté sont simplement écrasées par le token de correction. Pendant la vérification d'un bloc, un masque causal explicite empêche chaque proposition de voir les tokens suivants. Le cache est actuellement réservé aux modèles Baguette `hybrid=False` : les couches DeltaNet ont un état récurrent qui demande un retour arrière distinct.
+Puis comparer avec le décodage spéculatif, si le brouillon entraîné est disponible localement :
 
 ```bash
 python scripts/benchmark.py \
-  --baguette-source /chemin/vers/baguette \
-  --target-checkpoint /chemin/vers/baguette-123m-sft.pt \
-  --draft-checkpoint /chemin/vers/baguette-draft.pt \
-  --tokenizer /chemin/vers/baguette/tokenizer.json \
-  --draft-tokenizer /chemin/vers/draft/tokenizer.json \
-  --prompt "Bonjour, je suis" --max-new-tokens 64 \
-  --draft-lengths 2 4 6 8 --cache --output results/example.json
+  --baguette-source ../LLM \
+  --target-checkpoint ../LLM/baguette-123m-sft.pt \
+  --draft-checkpoint ../LLM/runs/specdec-draft-nano/distill-run1/draft-step3000.pt \
+  --tokenizer ../LLM/tokenizer.json \
+  --draft-tokenizer ../LLM/runs/specdec-draft-nano/tokenizer.json \
+  --prompt "Bonjour, je suis" \
+  --max-new-tokens 64 --draft-lengths 2 4 \
+  --temperature 0.5 --top-k 20 --top-p 0.95 --cache
 ```
 
-Les deux fichiers tokenizer doivent être identiques octet par octet, et les tailles de vocabulaire doivent correspondre aux checkpoints. Les checkpoints Baguette ne contiennent pas d'empreinte du tokenizer : il faut donc fournir celui réellement utilisé pour entraîner chaque modèle. Les petits checkpoints actuellement présents dans le dossier Baguette local ont des tokenizers différents et **ne conviennent pas** comme brouillons du modèle 123M. Un vrai brouillon plus petit, entraîné avec son tokenizer, est nécessaire pour mesurer un éventuel gain de vitesse. Le même checkpoint des deux côtés peut servir à vérifier le code, mais ne constitue pas une mesure de performance pertinente.
+La sortie indique notamment le débit en tokens par seconde, le temps avant le premier token, le taux d'acceptation et le rapport de vitesse par rapport à la génération classique. Un rapport supérieur à `1` signifie que la version spéculative est plus rapide.
 
-Le benchmark rapporte débit, temps au premier token, accélération, taux d'acceptation, moyenne de tokens acceptés par bloc, nombre de passages cible/brouillon et temps passé dans chacun. Les valeurs proviennent d'exécutions réelles ; elles varient d'un lancement à l'autre. `--cache` active le cache pour les deux modèles ; sans lui, on obtient la référence simple qui recalcule le préfixe.
+Les deux modèles doivent utiliser **exactement le même tokenizer**. Employer le même checkpoint pour la cible et le brouillon peut aider à vérifier le fonctionnement du code, mais ne donne pas une comparaison de vitesse utile.
 
-Pour plusieurs prompts, tailles de brouillon, longueurs de génération, températures, top-p et graines, modifier [`configs/example.json`](configs/example.json), puis lancer :
+## Premier résultat
 
-```bash
-python scripts/experiments.py \
-  --baguette-source /chemin/vers/baguette \
-  --target-checkpoint /chemin/vers/baguette-123m-sft.pt \
-  --tokenizer /chemin/vers/baguette/tokenizer.json \
-  --config configs/example.json --cache \
-  --output-csv results/experiments.csv \
-  --output-json results/experiments.json
-```
+Un brouillon `nano` de **16,6 millions de paramètres** a été distillé à partir du modèle cible Baguette de **123 millions de paramètres**. Les essais ont été faits sur Apple MPS avec le cache activé, trois prompts, trois graines par prompt et jusqu'à 64 nouveaux tokens.
 
-Chaque ligne est un essai brut avec ses réglages et ses mesures. Répéter plusieurs graines et examiner la dispersion avant de résumer un gain. Le cache exige des modèles Baguette sans DeltaNet.
+| Méthode | Débit médian | Vitesse relative | Tokens proposés acceptés |
+| --- | ---: | ---: | ---: |
+| Cible seule | 63,81 tokens/s | 1,00× | — |
+| Spéculatif, blocs de 2 | 40,18 tokens/s | 0,653× | 26,5 % |
+| Spéculatif, blocs de 4 | 30,91 tokens/s | 0,536× | 13,3 % |
 
-### Premier résultat mesuré
+Le petit modèle n'est donc pas encore assez efficace dans cette configuration pour compenser le coût de ses propositions et de leur vérification. Ces chiffres décrivent seulement cette machine et ce jeu de prompts. Les mesures détaillées sont dans le [mini rapport de benchmark](bench_reports/nano-distilled-step3000-mps.md), avec les résultats bruts en [CSV](bench_reports/nano-distilled-step3000-mps.csv) et en [JSON](bench_reports/nano-distilled-step3000-mps.json).
 
-Un brouillon `nano` de 16,6 M paramètres, distillé sur 3,07 M tokens, a été testé sur Apple MPS avec trois prompts et trois graines. Pour K=2, l'acceptation médiane est de 26,5 % et l'accélération médiane de **0,653×** : cette version est encore plus lente que la cible seule. Voir le [compte rendu et les essais bruts](bench_reports/nano-distilled-step3000-mps.md). Aucun gain de vitesse n'est revendiqué à ce stade.
+## Entraîner un brouillon compatible
 
-Lancer les tests de cette phase :
-
-```bash
-BAGUETTE_SOURCE=/chemin/vers/baguette python -m unittest discover -s tests -v
-```
-
-## Suite prévue
-
-1. Poursuivre l'entraînement et la distillation d'un brouillon plus petit avec **le même tokenizer et les mêmes IDs** que le modèle cible. Les fichiers `LLM/data/train.bin` présents avant ce projet utilisent un autre tokenizer ; `scripts/prepare_draft_corpus.py` recrée le corpus à partir des textes bruts avec celui du modèle cible, dans un nouveau dossier.
-2. Exécuter la grille d'expériences sur de vrais brouillons compatibles et analyser la dispersion et le coût par configuration. Aucun gain de vitesse n'est revendiqué avant ces mesures.
-3. Étudier le retour arrière de l'état DeltaNet avant de prendre en charge les modèles hybrides.
-
-Les tests couvrent la normalisation, la reproductibilité, la correction résiduelle, une vérification statistique sur un modèle jouet, l'alignement des logits, et l'équivalence du cache avec un passage complet. Les tests d'intégration du cache sont ignorés si `BAGUETTE_SOURCE` ne pointe pas sur le dépôt Baguette.
-
-## Préparer et entraîner un brouillon compatible
-
-La préparation suivante ne retélécharge rien et n'écrase pas le corpus Baguette existant :
+Le corpus Baguette déjà présent dans `../LLM/data/train.bin` utilise un autre tokenizer. Il faut donc recréer un corpus avec celui du modèle cible avant d'entraîner le brouillon :
 
 ```bash
 python scripts/prepare_draft_corpus.py \
@@ -89,7 +82,9 @@ python scripts/prepare_draft_corpus.py \
   --output-dir ../LLM/data/draft-123m-tokenizer
 ```
 
-`manifest.json` enregistre l'empreinte du tokenizer et les sources. Le dossier de sortie doit être vide avant le lancement. Pour entraîner directement par distillation, sans checkpoint de départ :
+Le dossier de sortie doit être vide. Le corpus réencodé a été supprimé après les essais pour économiser de la place ; cette commande permet de le recréer à partir des textes sources locaux.
+
+Pour lancer une distillation :
 
 ```bash
 python scripts/distill_draft.py \
@@ -101,4 +96,12 @@ python scripts/distill_draft.py \
   --steps 3000 --batch-size 8 --seq-len 128 --device auto
 ```
 
-La perte principale est `KL(cible || brouillon)` sur la distribution du prochain token ; une petite part de cross-entropy utilise le token réel du corpus. Le checkpoint conservé après l'expérience se trouve dans `../LLM/runs/specdec-draft-nano/distill-run1/draft-step3000.pt`. Il peut être utilisé par `scripts/benchmark.py` avec `--draft-tokenizer ../LLM/runs/specdec-draft-nano/tokenizer.json`. Les poids et les jeux de données restent hors de ce dépôt GitHub. Le corpus réencodé est reproductible avec la commande ci-dessus et peut être supprimé après l'entraînement.
+Les poids et les données restent dans le dossier local `LLM` et ne sont pas publiés dans ce dépôt. Le fichier [`configs/example.json`](configs/example.json) donne aussi un exemple de grille pour lancer plusieurs expériences avec `scripts/experiments.py`.
+
+## Tests et prochaines étapes
+
+```bash
+BAGUETTE_SOURCE=../LLM python -m unittest discover -s tests -v
+```
+
+La suite consiste surtout à améliorer le brouillon et à refaire les mesures sur davantage de prompts. Un meilleur taux d'acceptation pourrait rendre la méthode intéressante, mais seul un nouveau benchmark permettra de vérifier si elle accélère réellement Baguette.
