@@ -1,6 +1,6 @@
 # baguette-SpecDec
 
-Ce dépôt est un projet étudiant autour du **décodage spéculatif** appliqué à [Baguette](https://github.com/HENK0O/baguette), un modèle de langue entraîné en français. Le but est de voir si un petit modèle peut proposer des tokens assez vite pour accélérer la génération d'un modèle plus grand.
+`baguette-SpecDec` implémente le **décodage spéculatif** pour [Baguette](https://github.com/HENK0O/baguette). Un petit modèle propose plusieurs tokens, puis le modèle principal les vérifie pour essayer d'accélérer la génération.
 
 Le code fonctionne et les premiers tests sont reproductibles. Pour l'instant, la version spéculative est encore plus lente que la génération classique sur la machine utilisée. Le projet sert donc aussi à comprendre *pourquoi* une technique prometteuse sur le papier ne donne pas automatiquement un gain de vitesse en pratique.
 
