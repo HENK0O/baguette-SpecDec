@@ -1,0 +1,19 @@
+{
+  "drafts": [
+    {
+      "label": "draft-20m",
+      "checkpoint": "/chemin/vers/baguette-draft-20m.pt",
+      "tokenizer": "/chemin/vers/baguette/tokenizer.json"
+    }
+  ],
+  "prompts": [
+    "Bonjour, je suis",
+    "Explique en français pourquoi"
+  ],
+  "generation_lengths": [16, 32],
+  "draft_lengths": [2, 4, 6, 8],
+  "temperatures": [0.5, 1.0],
+  "top_ps": [0.9, 1.0],
+  "top_ks": [0],
+  "seeds": [0, 1, 2]
+}

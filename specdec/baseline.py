@@ -8,7 +8,7 @@ from typing import Callable
 
 import torch
 
-from specdec.sampling import sample_token
+from specdec.sampling import sample_token, seeded_generator
 
 
 @dataclass
@@ -53,7 +53,7 @@ def generate(
         raise ValueError(f"prompt + output exceeds model context ({max_seq_len} tokens)")
 
     device = next(model.parameters()).device
-    generator = torch.Generator(device=device.type).manual_seed(seed)
+    generator = seeded_generator(device, seed)
     sequence = torch.tensor([prompt_ids], dtype=torch.long, device=device)
     output: list[int] = []
     model.eval()

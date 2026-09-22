@@ -9,6 +9,15 @@ from __future__ import annotations
 import torch
 
 
+def seeded_generator(device: torch.device, seed: int) -> torch.Generator | None:
+    """Use a local RNG where PyTorch supports one; MPS may require global RNG."""
+    try:
+        return torch.Generator(device=device.type).manual_seed(seed)
+    except RuntimeError:
+        torch.manual_seed(seed)
+        return None
+
+
 def probabilities(
     logits: torch.Tensor,
     temperature: float = 1.0,

@@ -14,21 +14,8 @@ from tokenizers import Tokenizer
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from specdec.baseline import generate  # noqa: E402
-
-
-def load_baguette(source: Path, checkpoint: Path, device: torch.device):
-    """Use the original architecture, without copying weights or model code."""
-    sys.path.insert(0, str(source.resolve()))
-    from model import ModelConfig, build_model
-
-    # Only load trusted checkpoints. Exported weights work with weights_only=True.
-    payload = torch.load(checkpoint, map_location="cpu", weights_only=True)
-    if "model_cfg" not in payload or "model" not in payload:
-        raise ValueError("expected Baguette checkpoint with model_cfg and model")
-    config = ModelConfig.from_dict(payload["model_cfg"])
-    model = build_model(config)
-    model.load_state_dict(payload["model"])
-    return model.to(device).eval()
+from specdec.cached_generation import generate_cached  # noqa: E402
+from specdec.loader import load_baguette  # noqa: E402
 
 
 def main() -> None:
@@ -44,6 +31,7 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--cache", action="store_true", help="use the attention KV cache")
     args = parser.parse_args()
 
     if args.device == "auto":
@@ -57,7 +45,8 @@ def main() -> None:
         raise ValueError("tokenizer vocabulary does not match checkpoint model_cfg")
 
     prompt_ids = tokenizer.encode(args.prompt).ids
-    result = generate(
+    generate_fn = generate_cached if args.cache else generate
+    result = generate_fn(
         model, prompt_ids, max_new_tokens=args.max_new_tokens,
         greedy=args.greedy, temperature=args.temperature, top_k=args.top_k,
         top_p=args.top_p, seed=args.seed, eos_id=model.cfg.eos_id,
@@ -71,6 +60,7 @@ def main() -> None:
         "tokens_per_second": result.tokens_per_second,
         "device": device_name,
         "seed": args.seed,
+        "cache": args.cache,
     }, ensure_ascii=False, indent=2))
 
 
