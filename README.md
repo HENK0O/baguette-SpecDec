@@ -59,6 +59,10 @@ python scripts/experiments.py \
 
 Chaque ligne est un essai brut avec ses réglages et ses mesures. Répéter plusieurs graines et examiner la dispersion avant de résumer un gain. Le cache exige des modèles Baguette sans DeltaNet.
 
+### Premier résultat mesuré
+
+Un brouillon `nano` de 16,6 M paramètres, distillé sur 3,07 M tokens, a été testé sur Apple MPS avec trois prompts et trois graines. Pour K=2, l'acceptation médiane est de 26,5 % et l'accélération médiane de **0,653×** : cette version est encore plus lente que la cible seule. Voir le [compte rendu et les essais bruts](bench_reports/nano-distilled-step3000-mps.md). Aucun gain de vitesse n'est revendiqué à ce stade.
+
 Lancer les tests de cette phase :
 
 ```bash
