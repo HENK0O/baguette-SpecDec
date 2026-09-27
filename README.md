@@ -35,6 +35,7 @@ pip install -r requirements.txt
 ### Interface web locale
 
 Une interface locale en noir et gris permet de comparer les deux méthodes sans saisir une commande à chaque essai. Elle affiche les textes générés, le débit, le temps avant le premier token et le taux d'acceptation du brouillon.
+Le bouton « Documentation » explique les réglages et les mesures directement dans la page.
 
 ```bash
 python scripts/web_ui.py

@@ -24,7 +24,7 @@
     header { border-bottom: 1px solid var(--line); background: var(--surface); }
     .header-inner { max-width: 1120px; margin: 0 auto; padding: 17px 28px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .brand { font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
-    .brand span { color: var(--muted); font-weight: 500; }
+    .header-actions { display: flex; align-items: center; gap: 18px; }
     .device { color: var(--muted); font-size: 12px; text-align: right; }
     .hero { padding: 42px 0 25px; }
     h1 { font-size: clamp(28px, 4vw, 36px); line-height: 1.14; letter-spacing: -.035em; margin: 0 0 10px; font-weight: 650; }
@@ -38,11 +38,6 @@
     textarea { min-height: 96px; resize: vertical; padding: 13px 14px; }
     input[type="number"], select { height: 42px; padding: 0 11px; }
     .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 21px; }
-    .primary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .advanced { margin-top: 22px; }
-    .advanced summary { width: fit-content; color: var(--muted); font-size: 13px; cursor: pointer; }
-    .advanced summary:hover { color: var(--ink); }
-    .advanced .grid { margin-top: 18px; }
     .form-bottom { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 24px; margin-top: 22px; border-top: 1px solid var(--line); }
     .check { display: flex; align-items: center; gap: 9px; margin: 0; font-weight: 500; cursor: pointer; }
     .check input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
@@ -51,6 +46,9 @@
     button { border: 0; border-radius: 5px; color: #111; background: var(--accent); font-weight: 650; padding: 11px 18px; min-height: 43px; cursor: pointer; }
     button:hover { background: #d8d8d7; }
     button:disabled { opacity: .6; cursor: wait; }
+    .quiet-button { color: var(--ink); background: transparent; border: 1px solid #414446; font-size: 13px; font-weight: 500; padding: 7px 12px; min-height: 34px; }
+    .quiet-button:hover { background: #222425; }
+    .quiet-button:focus-visible { outline: 2px solid #a8abad; outline-offset: 2px; }
     input:disabled { background: #1a1c1d; color: #777b7d; }
     .message { margin: 18px 0 0; padding: 12px 14px; border-radius: 5px; font-size: 14px; }
     .message.error { border: 1px solid #704843; color: var(--danger); background: #1e1514; }
@@ -72,10 +70,20 @@
     dt { color: var(--muted); }
     dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
     footer { color: var(--muted); font-size: 12px; margin-top: 26px; }
+    dialog { width: min(660px, calc(100vw - 32px)); max-height: min(82vh, 780px); overflow-y: auto; padding: 25px 27px 27px; color: var(--ink); background: var(--surface); border: 1px solid #414446; border-radius: 8px; }
+    dialog::backdrop { background: rgba(0, 0, 0, .78); }
+    .docs-head { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+    .docs-head h2 { margin: 0; font-size: 22px; letter-spacing: -.025em; }
+    .docs-intro { color: var(--muted); margin: 8px 0 22px; font-size: 14px; }
+    .docs-section { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 18px; }
+    .docs-section h3 { margin: 0 0 12px; font-size: 14px; }
+    .docs-list { display: block; margin: 0; font-size: 13px; }
+    .docs-list dt { color: var(--ink); font-weight: 650; margin-top: 12px; }
+    .docs-list dt:first-child { margin-top: 0; }
+    .docs-list dd { color: var(--muted); font-weight: 400; text-align: left; margin: 2px 0 0; line-height: 1.55; }
     [hidden] { display: none !important; }
     @media (max-width: 760px) {
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .primary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panels { grid-template-columns: 1fr; }
       .form-bottom { align-items: flex-start; flex-direction: column; }
       .actions { width: 100%; justify-content: space-between; }
@@ -86,10 +94,12 @@
       .hero { padding-top: 33px; }
       .form-card, .panel { padding: 18px; }
       .grid { gap: 14px; }
-      .primary-grid { grid-template-columns: 1fr; }
+      .device { display: none; }
+      dialog { padding: 20px; }
       .summary { padding: 18px; }
       .actions { flex-direction: column; align-items: stretch; }
       button { width: 100%; }
+      .quiet-button { width: auto; }
     }
   </style>
 </head>
@@ -97,7 +107,10 @@
   <header>
     <div class="header-inner">
       <div class="brand">baguette-SpecDec</div>
-      <div class="device" id="device">Chargement des modèles…</div>
+      <div class="header-actions">
+        <div class="device" id="device">Chargement des modèles…</div>
+        <button class="quiet-button" id="open-docs" type="button" aria-haspopup="dialog" aria-controls="docs-dialog">Documentation</button>
+      </div>
     </div>
   </header>
   <main class="shell">
@@ -110,20 +123,15 @@
       <h2 class="section-heading">Réglages</h2>
       <label for="prompt">Prompt</label>
       <textarea id="prompt" maxlength="4000" required>Bonjour, je suis</textarea>
-      <div class="grid primary-grid">
+      <div class="grid">
         <div><label for="mode">Mode</label><select id="mode"><option value="sampling">Échantillonnage</option><option value="greedy">Greedy</option></select></div>
         <div><label for="max-new-tokens">Nouveaux tokens</label><input id="max-new-tokens" type="number" min="1" max="256" value="64" required></div>
         <div><label for="draft-length">Taille du bloc</label><input id="draft-length" type="number" min="1" max="16" value="2" required></div>
+        <div><label for="seed">Graine</label><input id="seed" type="number" min="0" max="4294967295" value="42" required></div>
+        <div><label for="temperature">Température</label><input id="temperature" data-sampling type="number" min="0.01" max="10" step="0.01" value="0.5" required></div>
+        <div><label for="top-k">Top-k</label><input id="top-k" data-sampling type="number" min="0" step="1" value="20" required></div>
+        <div><label for="top-p">Top-p</label><input id="top-p" data-sampling type="number" min="0.01" max="1" step="0.01" value="0.95" required></div>
       </div>
-      <details class="advanced">
-        <summary>Réglages avancés</summary>
-        <div class="grid">
-          <div><label for="seed">Graine</label><input id="seed" type="number" min="0" max="4294967295" value="42" required></div>
-          <div><label for="temperature">Température</label><input id="temperature" data-sampling type="number" min="0.01" max="10" step="0.01" value="0.5" required></div>
-          <div><label for="top-k">Top-k</label><input id="top-k" data-sampling type="number" min="0" step="1" value="20" required></div>
-          <div><label for="top-p">Top-p</label><input id="top-p" data-sampling type="number" min="0.01" max="1" step="0.01" value="0.95" required></div>
-        </div>
-      </details>
       <div class="form-bottom">
         <label class="check" for="cache"><input id="cache" type="checkbox" checked>Utiliser le cache d'attention</label>
         <div class="actions"><span class="hint">Temps mesurés après chargement des modèles.</span><button id="submit" type="submit">Comparer</button></div>
@@ -151,11 +159,49 @@
       <footer>Les débits varient selon le matériel et le prompt. En mode échantillonnage, les deux textes peuvent être différents tout en suivant la même distribution cible.</footer>
     </section>
   </main>
+  <dialog id="docs-dialog" aria-labelledby="docs-title">
+    <div class="docs-head">
+      <h2 id="docs-title">Documentation</h2>
+      <button class="quiet-button" id="close-docs" type="button">Fermer</button>
+    </div>
+    <p class="docs-intro">La page compare Baguette seul à Baguette aidé par un petit modèle brouillon. Les réglages actifs sont les mêmes pour les deux méthodes.</p>
+    <section class="docs-section">
+      <h3>Réglages</h3>
+      <dl class="docs-list">
+        <dt>Prompt</dt><dd>Début du texte donné au modèle avant la génération.</dd>
+        <dt>Mode</dt><dd>Échantillonnage : les tokens sont tirés selon leurs probabilités, donc les deux textes peuvent différer. Greedy : le token le plus probable est choisi à chaque étape ; la sortie spéculative doit être identique à celle de Baguette seul. Température, Top-k et Top-p sont ignorés en mode greedy.</dd>
+        <dt>Nouveaux tokens</dt><dd>Nombre maximal de tokens à générer. La génération peut s'arrêter plus tôt si le modèle produit un token de fin.</dd>
+        <dt>Taille du bloc</dt><dd>Nombre maximal de tokens proposés par le brouillon avant une vérification par Baguette.</dd>
+        <dt>Graine</dt><dd>Fixe les tirages aléatoires pour reproduire un essai. Elle n'a pas d'effet sur le texte en mode greedy.</dd>
+        <dt>Température</dt><dd>En échantillonnage, une valeur sous 1 favorise les tokens les plus probables ; une valeur au-dessus de 1 augmente la variété.</dd>
+        <dt>Top-k</dt><dd>Limite le tirage aux k tokens les plus probables. La valeur 0 désactive ce filtre.</dd>
+        <dt>Top-p</dt><dd>Conserve les tokens les plus probables jusqu'à atteindre une probabilité cumulée p. La valeur 1 désactive ce filtre.</dd>
+        <dt>Cache d'attention</dt><dd>Réutilise les calculs des tokens précédents. Disponible pour les modèles Baguette sans couches DeltaNet.</dd>
+        <dt>Comparer</dt><dd>Lance les deux générations avec le même prompt et les mêmes réglages, puis affiche leurs mesures.</dd>
+      </dl>
+    </section>
+    <section class="docs-section">
+      <h3>Lire les résultats</h3>
+      <dl class="docs-list">
+        <dt>Vitesse relative</dt><dd>Rapport entre les débits avec et sans brouillon. Au-dessus de 1×, le décodage spéculatif est plus rapide.</dd>
+        <dt>Débit</dt><dd>Nombre de tokens générés par seconde, après chargement des modèles.</dd>
+        <dt>Premier token</dt><dd>Temps écoulé avant l'arrivée du premier token.</dd>
+        <dt>Durée totale</dt><dd>Temps de génération du texte affiché, sans le chargement des modèles.</dd>
+        <dt>Tokens générés</dt><dd>Nombre de tokens réellement produits ; il peut être inférieur à la limite demandée si la génération s'arrête plus tôt.</dd>
+        <dt>Propositions acceptées</dt><dd>Part des tokens proposés par le brouillon que Baguette a conservés.</dd>
+        <dt>Passages cible / brouillon</dt><dd>Nombre d'appels à chaque modèle pendant la génération mesurée.</dd>
+      </dl>
+    </section>
+  </dialog>
   <script>
     const byId = id => document.getElementById(id);
     const number = (value, digits = 2) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: digits }).format(value);
     const seconds = value => `${number(value, 3)} s`;
     const tps = value => `${number(value)} tokens/s`;
+
+    const docsDialog = byId('docs-dialog');
+    byId('open-docs').addEventListener('click', () => docsDialog.showModal());
+    byId('close-docs').addEventListener('click', () => docsDialog.close());
 
     function updateMode() {
       const greedy = byId('mode').value === 'greedy';
