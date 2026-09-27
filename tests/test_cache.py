@@ -76,6 +76,32 @@ class CacheTests(unittest.TestCase):
         self.assertLess(cached.accepted, cached.proposed)
         self.assertEqual(cached.target_forward_passes, cached.blocks + 1)
 
+    def test_cached_greedy_matches_target(self):
+        from model import ModelConfig, build_model
+
+        accepted = generate_speculative_cached(
+            self.model, self.model, [1, 2], max_new_tokens=6,
+            draft_length=2, greedy=True,
+        )
+        baseline = generate_cached(self.model, [1, 2], max_new_tokens=6, greedy=True)
+        self.assertEqual(accepted.token_ids, baseline.token_ids)
+        self.assertEqual(accepted.accepted, accepted.proposed)
+
+        torch.manual_seed(19)
+        draft = build_model(ModelConfig(
+            vocab_size=32, n_layer=2, n_head=2, n_kv_head=1,
+            d_model=32, head_dim=16, d_ff=64, max_seq_len=16,
+            hybrid=False,
+        )).eval()
+        draft.lm_head.weight = torch.nn.Parameter(-self.model.lm_head.weight.detach().clone())
+        options = dict(max_new_tokens=6, draft_length=2, greedy=True)
+        reference = generate_speculative(self.model, draft, [1, 2], **options)
+        cached = generate_speculative_cached(self.model, draft, [1, 2], **options)
+        self.assertEqual(cached.token_ids, baseline.token_ids)
+        self.assertEqual(reference.token_ids, baseline.token_ids)
+        self.assertLess(cached.accepted, cached.proposed)
+        self.assertEqual(cached.target_forward_passes, cached.blocks + 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,6 +69,7 @@ def generate_speculative_cached(
     *,
     max_new_tokens: int,
     draft_length: int,
+    greedy: bool = False,
     temperature: float = 1.0,
     top_k: int = 0,
     top_p: float = 1.0,
@@ -117,10 +118,13 @@ def generate_speculative_cached(
         proposals: list[int] = []
         q_vectors: list[torch.Tensor] = []
         for i in range(K):
-            q = probabilities(draft_next, temperature, top_k, top_p)
-            token = int(torch.multinomial(q, 1, generator=generator).item())
+            if greedy:
+                token = int(torch.argmax(draft_next).item())
+            else:
+                q = probabilities(draft_next, temperature, top_k, top_p)
+                token = int(torch.multinomial(q, 1, generator=generator).item())
+                q_vectors.append(q)
             proposals.append(token)
-            q_vectors.append(q)
             token_tensor = torch.tensor([[token]], dtype=torch.long, device=device)
             t0 = time.perf_counter()
             draft_next = forward_all(draft, token_tensor, draft_caches, position + i)[0, -1, :]
@@ -146,12 +150,13 @@ def generate_speculative_cached(
         verification_logits = forward_all(target, proposal_tensor, target_caches,
                                           verification_pos)
         if pending_target_token is None:
-            p_vectors = [probabilities(target_next, temperature, top_k, top_p)]
-            p_vectors += [probabilities(verification_logits[0, i, :], temperature,
-                                        top_k, top_p) for i in range(K)]
+            p_vectors = [target_next]
+            p_vectors += [verification_logits[0, i, :] for i in range(K)]
         else:
-            p_vectors = [probabilities(verification_logits[0, i, :], temperature,
-                                        top_k, top_p) for i in range(K + 1)]
+            p_vectors = [verification_logits[0, i, :] for i in range(K + 1)]
+        if not greedy:
+            p_vectors = [probabilities(logits, temperature, top_k, top_p)
+                         for logits in p_vectors]
         synchronize(device)
         target_seconds += time.perf_counter() - t0
         target_passes += 1
@@ -160,22 +165,33 @@ def generate_speculative_cached(
         accepted_this_block = 0
         rejected = False
         for i, token in enumerate(proposals):
-            p, q = p_vectors[i], q_vectors[i]
-            if float(torch.rand((), generator=generator, device=device).item()) < acceptance_probability(p, q, token):
+            p = p_vectors[i]
+            if greedy:
+                correction = int(torch.argmax(p).item())
+                accept = token == correction
+            else:
+                accept = (float(torch.rand((), generator=generator, device=device).item())
+                          < acceptance_probability(p, q_vectors[i], token))
+            if accept:
                 accepted += 1
                 accepted_this_block += 1
                 output_block.append(token)
                 if eos_id is not None and token == eos_id:
                     break
             else:
-                correction = int(torch.multinomial(residual_probabilities(p, q), 1, generator=generator).item())
+                if not greedy:
+                    correction = int(torch.multinomial(
+                        residual_probabilities(p, q_vectors[i]), 1, generator=generator
+                    ).item())
                 output_block.append(correction)
                 rejected = True
                 break
 
         if not rejected and len(output_block) == K and len(generated) + K < max_new_tokens:
             if eos_id is None or output_block[-1] != eos_id:
-                output_block.append(int(torch.multinomial(p_vectors[K], 1, generator=generator).item()))
+                bonus = (int(torch.argmax(p_vectors[K]).item()) if greedy else
+                         int(torch.multinomial(p_vectors[K], 1, generator=generator).item()))
+                output_block.append(bonus)
 
         if not generated:
             synchronize(device)

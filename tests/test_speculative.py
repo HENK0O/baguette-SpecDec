@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import torch
 
 from specdec.loader import assert_tokenizer_compatible
+from specdec.baseline import generate
 from specdec.speculative import (
     acceptance_probability,
     generate_speculative,
@@ -67,6 +68,29 @@ class SpeculativeTests(unittest.TestCase):
         self.assertEqual(result.target_forward_passes, 2)
         self.assertEqual(result.accepted, 4)
         self.assertEqual(result.proposed, 4)
+
+    def test_greedy_matches_target_on_acceptance_and_rejection(self):
+        target = TransitionModel()
+        accepted = generate_speculative(target, target, [0], max_new_tokens=5,
+                                        draft_length=2, greedy=True)
+        baseline = generate(target, [0], max_new_tokens=5, greedy=True)
+        self.assertEqual(accepted.token_ids, baseline.token_ids)
+        self.assertEqual(accepted.accepted, accepted.proposed)
+
+        target = StaticModel([0.1, 0.8, 0.1])
+        draft = StaticModel([0.8, 0.1, 0.1])
+        rejected = generate_speculative(target, draft, [0], max_new_tokens=5,
+                                        draft_length=2, greedy=True)
+        baseline = generate(target, [0], max_new_tokens=5, greedy=True)
+        self.assertEqual(rejected.token_ids, baseline.token_ids)
+        self.assertEqual(rejected.accepted, 0)
+
+    def test_greedy_stops_at_eos(self):
+        target = StaticModel([0.1, 0.8, 0.1])
+        draft = StaticModel([0.8, 0.1, 0.1])
+        result = generate_speculative(target, draft, [0], max_new_tokens=5,
+                                      draft_length=2, greedy=True, eos_id=1)
+        self.assertEqual(result.token_ids, [1])
 
     def test_vocab_and_context_checks(self):
         with self.assertRaisesRegex(ValueError, "vocab sizes"):

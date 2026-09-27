@@ -30,6 +30,18 @@ class ExperimentTests(unittest.TestCase):
         self.assertTrue(all(row["baseline_tokens_per_second"] > 0 for row in rows))
         self.assertTrue(all(row["target_forward_passes"] > 0 for row in rows))
 
+    def test_greedy_grid_matches_baseline(self):
+        model = TinyModel()
+        rows = run_trials(
+            model, model, [("A", [0])], draft_label="tiny",
+            generation_lengths=[3], draft_lengths=[2],
+            temperatures=[1.0], top_ps=[1.0], top_ks=[0], seeds=[1],
+            cache=False, greedy=True,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["greedy"])
+        self.assertEqual(rows[0]["baseline_generated_tokens"], rows[0]["spec_generated_tokens"])
+
 
 if __name__ == "__main__":
     unittest.main()

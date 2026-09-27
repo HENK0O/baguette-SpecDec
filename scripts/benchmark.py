@@ -28,6 +28,7 @@ def main() -> None:
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--draft-lengths", type=int, nargs="+", default=[2, 4, 6, 8])
+    parser.add_argument("--greedy", action="store_true", help="compare exact greedy decoding")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=0)
@@ -58,7 +59,8 @@ def main() -> None:
     if not ids:
         raise ValueError("prompt produced no tokens")
 
-    settings = dict(max_new_tokens=args.max_new_tokens, temperature=args.temperature,
+    settings = dict(max_new_tokens=args.max_new_tokens, greedy=args.greedy,
+                    temperature=args.temperature,
                     top_k=args.top_k, top_p=args.top_p, seed=args.seed,
                     eos_id=target.cfg.eos_id)
     baseline_fn = generate_cached if args.cache else generate
@@ -73,6 +75,7 @@ def main() -> None:
         "prompt": args.prompt,
         "device": name,
         "seed": args.seed,
+        "greedy": args.greedy,
         "cache": args.cache,
         "warmup_runs": args.warmup_runs,
         "target_checkpoint": str(args.target_checkpoint),
@@ -87,6 +90,8 @@ def main() -> None:
     }
     for K in args.draft_lengths:
         result = speculative_fn(target, draft, ids, draft_length=K, **settings)
+        if args.greedy and result.token_ids != baseline.token_ids:
+            raise RuntimeError(f"greedy speculative output differs from target baseline for K={K}")
         results["speculative"].append({
             "draft_length": K,
             "generated_tokens": len(result.token_ids),

@@ -24,6 +24,7 @@ def run_trials(
     top_ks: list[int],
     seeds: list[int],
     cache: bool,
+    greedy: bool = False,
     warmup_runs: int = 1,
 ) -> list[dict]:
     """Measure baseline once and each K once for every other combination."""
@@ -40,6 +41,7 @@ def run_trials(
     draft_params = sum(p.numel() for p in draft.parameters())
     warmup_prompt = encoded_prompts[0][1]
     warmup_settings = dict(max_new_tokens=min(4, generation_lengths[0]),
+                           greedy=greedy,
                            temperature=temperatures[0], top_p=top_ps[0],
                            top_k=top_ks[0], seed=seeds[0], eos_id=target.cfg.eos_id)
     for _ in range(warmup_runs):
@@ -50,16 +52,20 @@ def run_trials(
     for (prompt, ids), n, temperature, top_p, top_k, seed in product(
         encoded_prompts, generation_lengths, temperatures, top_ps, top_ks, seeds
     ):
-        settings = dict(max_new_tokens=n, temperature=temperature, top_p=top_p,
+        settings = dict(max_new_tokens=n, greedy=greedy,
+                        temperature=temperature, top_p=top_p,
                         top_k=top_k, seed=seed, eos_id=target.cfg.eos_id)
         baseline = baseline_fn(target, ids, **settings)
         for K in draft_lengths:
             result = spec_fn(target, draft, ids, draft_length=K, **settings)
+            if greedy and result.token_ids != baseline.token_ids:
+                raise RuntimeError(f"greedy speculative output differs from target baseline for K={K}")
             rows.append({
                 "draft_label": draft_label,
                 "target_parameters": target_params,
                 "draft_parameters": draft_params,
                 "cache": cache,
+                "greedy": greedy,
                 "warmup_runs": warmup_runs,
                 "prompt": prompt,
                 "prompt_tokens": len(ids),

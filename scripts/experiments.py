@@ -27,6 +27,7 @@ def main() -> None:
     parser.add_argument("--output-json", type=Path)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--cache", action="store_true")
+    parser.add_argument("--greedy", action="store_true", help="compare exact greedy decoding")
     parser.add_argument("--warmup-runs", type=int, default=1)
     args = parser.parse_args()
 
@@ -65,7 +66,7 @@ def main() -> None:
             temperatures=config["temperatures"],
             top_ps=config["top_ps"],
             top_ks=config["top_ks"],
-            seeds=config["seeds"], cache=args.cache,
+            seeds=config["seeds"], cache=args.cache, greedy=args.greedy,
             warmup_runs=args.warmup_runs,
         ))
         del draft

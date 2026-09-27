@@ -14,6 +14,7 @@ L'acceptation suit la règle `min(1, p(x) / q(x))`, où `p` est la probabilité 
 
 - Une génération classique pour servir de référence, avec ou sans cache.
 - Une implémentation du décodage spéculatif avec échantillonnage et correction exacte.
+- Un mode déterministe `--greedy` qui vérifie que la sortie spéculative est identique à celle de la cible seule.
 - Des scripts pour préparer les données, entraîner un brouillon compatible et comparer les vitesses.
 - Des tests sur la correction, l'alignement des logits et le cache.
 
@@ -22,6 +23,7 @@ Le cache fonctionne actuellement avec les modèles Baguette configurés avec `hy
 ## Essayer le projet
 
 Les commandes ci-dessous partent du dossier `baguette-SpecDec` et supposent que le dépôt Baguette se trouve juste à côté, dans `../LLM`. Les poids des modèles ne sont pas inclus dans ce dépôt GitHub.
+Le projet s'utilise en ligne de commande ; il n'a pas d'interface graphique.
 
 Installer les dépendances :
 
@@ -55,6 +57,8 @@ python scripts/benchmark.py \
 ```
 
 La sortie indique notamment le débit en tokens par seconde, le temps avant le premier token, le taux d'acceptation et le rapport de vitesse par rapport à la génération classique. Un rapport supérieur à `1` signifie que la version spéculative est plus rapide.
+
+Pour comparer les deux méthodes en génération déterministe, ajouter `--greedy` à la commande de benchmark. Dans ce mode, les réglages de température, top-k et top-p sont ignorés. Le benchmark vérifie aussi que la sortie spéculative est identique à celle de la cible seule. L'option `--greedy` fonctionne également avec `scripts/experiments.py`.
 
 Les deux modèles doivent utiliser **exactement le même tokenizer**. Employer le même checkpoint pour la cible et le brouillon peut aider à vérifier le fonctionnement du code, mais ne donne pas une comparaison de vitesse utile.
 
