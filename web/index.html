@@ -3,18 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>baguette-SpecDec · Comparateur</title>
+  <title>baguette-SpecDec</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f5f5f1;
-      --surface: #fff;
-      --ink: #202623;
-      --muted: #63706a;
-      --line: #dce2dc;
-      --accent: #31584b;
-      --accent-light: #eaf1ec;
-      --danger: #9a443a;
+      color-scheme: dark;
+      --bg: #090a0b;
+      --surface: #111213;
+      --ink: #ededed;
+      --muted: #9a9d9f;
+      --line: #2c2e30;
+      --accent: #f0f0ef;
+      --accent-light: #1b1d1e;
+      --danger: #eeaaa3;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     * { box-sizing: border-box; }
@@ -25,46 +25,49 @@
     .header-inner { max-width: 1120px; margin: 0 auto; padding: 17px 28px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .brand { font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
     .brand span { color: var(--muted); font-weight: 500; }
-    .device { color: var(--muted); font-size: 13px; white-space: nowrap; }
-    .hero { padding: 48px 0 27px; }
-    h1 { font-size: clamp(29px, 4vw, 42px); line-height: 1.12; letter-spacing: -.045em; margin: 0 0 12px; font-weight: 700; }
-    .hero p { color: var(--muted); max-width: 650px; margin: 0; font-size: 16px; }
-    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 2px rgba(24, 42, 30, .025); }
-    .form-card { padding: 26px; }
-    .section-heading { margin: 0 0 19px; font-size: 17px; letter-spacing: -.02em; }
+    .device { color: var(--muted); font-size: 12px; text-align: right; }
+    .hero { padding: 42px 0 25px; }
+    h1 { font-size: clamp(28px, 4vw, 36px); line-height: 1.14; letter-spacing: -.035em; margin: 0 0 10px; font-weight: 650; }
+    .hero p { color: var(--muted); max-width: 690px; margin: 0; font-size: 15px; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+    .form-card { padding: 24px; }
+    .section-heading { margin: 0 0 19px; font-size: 16px; letter-spacing: -.01em; }
     label { display: block; color: var(--ink); font-weight: 600; font-size: 13px; margin-bottom: 8px; }
-    textarea, input[type="number"], select { width: 100%; background: #fff; border: 1px solid #cbd5cd; border-radius: 7px; color: var(--ink); outline: none; }
-    textarea:focus, input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
-    textarea { min-height: 112px; resize: vertical; padding: 13px 14px; }
+    textarea, input[type="number"], select { width: 100%; background: #0c0d0e; border: 1px solid #393c3e; border-radius: 5px; color: var(--ink); outline: none; }
+    textarea:focus, input:focus, select:focus { border-color: #a8abad; box-shadow: 0 0 0 2px #26292a; }
+    textarea { min-height: 96px; resize: vertical; padding: 13px 14px; }
     input[type="number"], select { height: 42px; padding: 0 11px; }
     .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin-top: 21px; }
-    .field-note { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); font-weight: 400; }
+    .primary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .advanced { margin-top: 22px; }
+    .advanced summary { width: fit-content; color: var(--muted); font-size: 13px; cursor: pointer; }
+    .advanced summary:hover { color: var(--ink); }
+    .advanced .grid { margin-top: 18px; }
     .form-bottom { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 24px; margin-top: 22px; border-top: 1px solid var(--line); }
     .check { display: flex; align-items: center; gap: 9px; margin: 0; font-weight: 500; cursor: pointer; }
     .check input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
     .actions { display: flex; align-items: center; gap: 15px; }
     .hint { color: var(--muted); font-size: 12px; }
-    button { border: 0; border-radius: 7px; color: #fff; background: var(--accent); font-weight: 650; padding: 11px 18px; min-height: 43px; cursor: pointer; }
-    button:hover { background: #25483c; }
+    button { border: 0; border-radius: 5px; color: #111; background: var(--accent); font-weight: 650; padding: 11px 18px; min-height: 43px; cursor: pointer; }
+    button:hover { background: #d8d8d7; }
     button:disabled { opacity: .6; cursor: wait; }
-    input:disabled { background: #f5f6f3; color: #87918b; }
-    .message { margin: 18px 0 0; padding: 12px 14px; border-radius: 7px; font-size: 14px; }
-    .message.error { border: 1px solid #e2bbb5; color: var(--danger); background: #fff8f6; }
+    input:disabled { background: #1a1c1d; color: #777b7d; }
+    .message { margin: 18px 0 0; padding: 12px 14px; border-radius: 5px; font-size: 14px; }
+    .message.error { border: 1px solid #704843; color: var(--danger); background: #1e1514; }
     .message.progress { border: 1px solid var(--line); color: var(--accent); background: var(--accent-light); }
-    .results { margin-top: 38px; }
+    .results { margin-top: 34px; }
     .results-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
     .results-head h2 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
     .results-head p { color: var(--muted); font-size: 13px; margin: 0; }
     .summary { display: flex; align-items: center; gap: 24px; padding: 20px 25px; margin-bottom: 16px; }
-    .speed { font-size: 35px; line-height: 1; font-weight: 700; letter-spacing: -.045em; color: var(--accent); white-space: nowrap; }
+    .speed { font-size: 32px; line-height: 1; font-weight: 700; letter-spacing: -.04em; color: var(--ink); white-space: nowrap; }
     .summary strong { display: block; font-size: 14px; margin-bottom: 3px; }
     .summary span { color: var(--muted); font-size: 13px; }
     .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .panel { padding: 23px; min-width: 0; }
     .panel-title { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 16px; }
     .panel h3 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
-    .badge { color: var(--accent); background: var(--accent-light); border-radius: 99px; padding: 3px 9px; font-size: 11px; font-weight: 650; }
-    .generated { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); background: #fafbf9; border-radius: 7px; padding: 15px; min-height: 170px; max-height: 420px; overflow-y: auto; font-size: 14px; line-height: 1.65; }
+    .generated { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); background: #0c0d0e; border-radius: 5px; padding: 15px; min-height: 170px; max-height: 420px; overflow-y: auto; font-size: 14px; line-height: 1.65; }
     dl { display: grid; grid-template-columns: 1fr auto; gap: 9px 12px; margin: 18px 0 0; font-size: 13px; }
     dt { color: var(--muted); }
     dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
@@ -72,6 +75,7 @@
     [hidden] { display: none !important; }
     @media (max-width: 760px) {
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .primary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .panels { grid-template-columns: 1fr; }
       .form-bottom { align-items: flex-start; flex-direction: column; }
       .actions { width: 100%; justify-content: space-between; }
@@ -82,6 +86,7 @@
       .hero { padding-top: 33px; }
       .form-card, .panel { padding: 18px; }
       .grid { gap: 14px; }
+      .primary-grid { grid-template-columns: 1fr; }
       .summary { padding: 18px; }
       .actions { flex-direction: column; align-items: stretch; }
       button { width: 100%; }
@@ -91,32 +96,37 @@
 <body>
   <header>
     <div class="header-inner">
-      <div class="brand">baguette<span> / SpecDec</span></div>
+      <div class="brand">baguette-SpecDec</div>
       <div class="device" id="device">Chargement des modèles…</div>
     </div>
   </header>
   <main class="shell">
     <section class="hero">
-      <h1>Comparer les deux décodages</h1>
-      <p>Un même prompt, deux méthodes de génération. Les modèles tournent localement sur cette machine.</p>
+      <h1>Décodage spéculatif</h1>
+      <p>Baguette seul, puis Baguette assisté par un petit modèle brouillon. Cette page mesure l'effet sur la vitesse de génération.</p>
     </section>
 
     <form class="card form-card" id="form">
       <h2 class="section-heading">Réglages</h2>
       <label for="prompt">Prompt</label>
       <textarea id="prompt" maxlength="4000" required>Bonjour, je suis</textarea>
-      <div class="grid">
+      <div class="grid primary-grid">
         <div><label for="mode">Mode</label><select id="mode"><option value="sampling">Échantillonnage</option><option value="greedy">Greedy</option></select></div>
         <div><label for="max-new-tokens">Nouveaux tokens</label><input id="max-new-tokens" type="number" min="1" max="256" value="64" required></div>
         <div><label for="draft-length">Taille du bloc</label><input id="draft-length" type="number" min="1" max="16" value="2" required></div>
-        <div><label for="seed">Graine</label><input id="seed" type="number" min="0" max="4294967295" value="42" required></div>
-        <div><label for="temperature">Température</label><input id="temperature" data-sampling type="number" min="0.01" max="10" step="0.01" value="0.5" required></div>
-        <div><label for="top-k">Top-k</label><input id="top-k" data-sampling type="number" min="0" step="1" value="20" required></div>
-        <div><label for="top-p">Top-p</label><input id="top-p" data-sampling type="number" min="0.01" max="1" step="0.01" value="0.95" required></div>
       </div>
+      <details class="advanced">
+        <summary>Réglages avancés</summary>
+        <div class="grid">
+          <div><label for="seed">Graine</label><input id="seed" type="number" min="0" max="4294967295" value="42" required></div>
+          <div><label for="temperature">Température</label><input id="temperature" data-sampling type="number" min="0.01" max="10" step="0.01" value="0.5" required></div>
+          <div><label for="top-k">Top-k</label><input id="top-k" data-sampling type="number" min="0" step="1" value="20" required></div>
+          <div><label for="top-p">Top-p</label><input id="top-p" data-sampling type="number" min="0.01" max="1" step="0.01" value="0.95" required></div>
+        </div>
+      </details>
       <div class="form-bottom">
         <label class="check" for="cache"><input id="cache" type="checkbox" checked>Utiliser le cache d'attention</label>
-        <div class="actions"><span class="hint">Les temps excluent le chargement des modèles.</span><button id="submit" type="submit">Lancer la comparaison</button></div>
+        <div class="actions"><span class="hint">Temps mesurés après chargement des modèles.</span><button id="submit" type="submit">Comparer</button></div>
       </div>
     </form>
 
@@ -128,12 +138,12 @@
       <div class="card summary"><div class="speed" id="speedup"></div><div><strong id="speed-label"></strong><span id="speed-note"></span></div></div>
       <div class="panels">
         <article class="card panel">
-          <div class="panel-title"><h3>Cible seule</h3><span class="badge">Référence</span></div>
+          <div class="panel-title"><h3>Baguette seul</h3></div>
           <div class="generated" id="baseline-text"></div>
           <dl><dt>Débit</dt><dd id="baseline-tps"></dd><dt>Premier token</dt><dd id="baseline-first"></dd><dt>Durée totale</dt><dd id="baseline-total"></dd><dt>Tokens générés</dt><dd id="baseline-count"></dd></dl>
         </article>
         <article class="card panel">
-          <div class="panel-title"><h3>Décodage spéculatif</h3><span class="badge">Brouillon + cible</span></div>
+          <div class="panel-title"><h3>Baguette + brouillon</h3></div>
           <div class="generated" id="spec-text"></div>
           <dl><dt>Débit</dt><dd id="spec-tps"></dd><dt>Premier token</dt><dd id="spec-first"></dd><dt>Durée totale</dt><dd id="spec-total"></dd><dt>Tokens générés</dt><dd id="spec-count"></dd><dt>Propositions acceptées</dt><dd id="spec-accept"></dd><dt>Passages cible / brouillon</dt><dd id="spec-passes"></dd></dl>
         </article>
@@ -156,7 +166,7 @@
     fetch('/api/info').then(async response => {
       if (!response.ok) throw new Error('Impossible de lire les informations des modèles');
       const info = await response.json();
-      byId('device').textContent = `Modèles chargés · ${info.device.toUpperCase()} · ${number(info.target_parameters / 1e6, 1)} M / ${number(info.draft_parameters / 1e6, 1)} M`;
+      byId('device').textContent = `Cible ${number(info.target_parameters / 1e6, 1)} M · brouillon ${number(info.draft_parameters / 1e6, 1)} M · ${info.device.toUpperCase()}`;
       byId('cache').checked = info.cache_supported;
       byId('cache').disabled = !info.cache_supported;
       byId('top-k').max = info.vocab_size;
@@ -190,8 +200,8 @@
         byId('results').hidden = false;
         byId('result-note').textContent = data.greedy ? 'Mode greedy · sorties identiques vérifiées' : 'Mode échantillonnage';
         byId('speedup').textContent = `${number(data.speculative.speedup)}×`;
-        byId('speed-label').textContent = data.speculative.speedup >= 1 ? 'Décodage spéculatif plus rapide' : 'Cible seule plus rapide';
-        byId('speed-note').textContent = 'Rapport des débits mesurés sur cette exécution.';
+        byId('speed-label').textContent = data.speculative.speedup >= 1 ? 'Avec brouillon : plus rapide' : 'Baguette seul : plus rapide';
+        byId('speed-note').textContent = 'Débit avec brouillon / débit de Baguette seul.';
         byId('baseline-text').textContent = data.baseline.text;
         byId('spec-text').textContent = data.speculative.text;
         byId('baseline-tps').textContent = tps(data.baseline.tokens_per_second);
@@ -210,7 +220,7 @@
       } finally {
         byId('progress').hidden = true;
         byId('submit').disabled = false;
-        byId('submit').textContent = 'Lancer la comparaison';
+        byId('submit').textContent = 'Comparer';
       }
     });
   </script>

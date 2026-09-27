@@ -2,6 +2,8 @@
 
 `baguette-SpecDec` implémente le **décodage spéculatif** pour [Baguette](https://github.com/HENK0O/baguette). Un petit modèle propose plusieurs tokens, puis le modèle principal les vérifie pour essayer d'accélérer la génération.
 
+La comparaison mesure la vitesse de Baguette seul et celle de Baguette assisté par ce brouillon. L'implémentation actuelle utilise l'architecture Baguette ; la méthode de décodage peut aussi être adaptée à d'autres modèles.
+
 Le code fonctionne et les premiers tests sont reproductibles. Pour l'instant, la version spéculative est encore plus lente que la génération classique sur la machine utilisée. Le projet sert donc aussi à comprendre *pourquoi* une technique prometteuse sur le papier ne donne pas automatiquement un gain de vitesse en pratique.
 
 ## Comment ça marche ?
@@ -32,7 +34,7 @@ pip install -r requirements.txt
 
 ### Interface web locale
 
-Une interface sobre permet de comparer les deux méthodes sans saisir une commande à chaque essai. Elle affiche les textes générés, le débit, le temps avant le premier token et le taux d'acceptation du brouillon.
+Une interface locale en noir et gris permet de comparer les deux méthodes sans saisir une commande à chaque essai. Elle affiche les textes générés, le débit, le temps avant le premier token et le taux d'acceptation du brouillon.
 
 ```bash
 python scripts/web_ui.py
