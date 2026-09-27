@@ -23,13 +23,24 @@ Le cache fonctionne actuellement avec les modèles Baguette configurés avec `hy
 ## Essayer le projet
 
 Les commandes ci-dessous partent du dossier `baguette-SpecDec` et supposent que le dépôt Baguette se trouve juste à côté, dans `../LLM`. Les poids des modèles ne sont pas inclus dans ce dépôt GitHub.
-Le projet s'utilise en ligne de commande ; il n'a pas d'interface graphique.
 
 Installer les dépendances :
 
 ```bash
 pip install -r requirements.txt
 ```
+
+### Interface web locale
+
+Une interface sobre permet de comparer les deux méthodes sans saisir une commande à chaque essai. Elle affiche les textes générés, le débit, le temps avant le premier token et le taux d'acceptation du brouillon.
+
+```bash
+python scripts/web_ui.py
+```
+
+Ouvrir ensuite `http://127.0.0.1:8765` dans un navigateur. Les modèles sont chargés une fois au démarrage et la page fonctionne uniquement sur cette machine. La commande utilise par défaut les checkpoints et tokenizers locaux indiqués plus bas ; pour d'autres fichiers, utiliser `--baguette-source`, `--target-checkpoint`, `--draft-checkpoint`, `--tokenizer` et `--draft-tokenizer`. Arrêter le serveur avec `Ctrl+C`.
+
+### Ligne de commande
 
 Tester d'abord la génération classique :
 
