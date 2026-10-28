@@ -88,6 +88,12 @@ Un brouillon `nano` de **16,6 millions de paramètres** a été distillé à par
 
 Le petit modèle n'est donc pas encore assez efficace dans cette configuration pour compenser le coût de ses propositions et de leur vérification. Ces chiffres décrivent seulement cette machine et ce jeu de prompts. Les mesures détaillées sont dans le [mini rapport de benchmark](bench_reports/nano-distilled-step3000-mps.md), avec les résultats bruts en [CSV](bench_reports/nano-distilled-step3000-mps.csv) et en [JSON](bench_reports/nano-distilled-step3000-mps.json).
 
+### Optimisation du moteur avec cache
+
+Le moteur évite maintenant un appel au brouillon par bloc, réutilise les masques d'attention et calcule uniquement les logits et les probabilités utiles. Le cache est aussi limité à la longueur de la requête.
+
+Sur 18 essais MPS du 28 octobre 2026, le débit spéculatif augmente de **24 à 25 % par rapport à la version précédente**, avec les mêmes tokens générés. Baguette seul est également optimisé et reste plus rapide avec le brouillon actuel. Le [rapport avant/après](bench_reports/cached-optimization-20261028.md) contient le protocole, les mesures et la commande pour les reproduire. Ces améliorations sont utilisées par le benchmark et l'interface lorsque le cache est activé.
+
 ## Entraîner un brouillon compatible
 
 Le corpus Baguette déjà présent dans `../LLM/data/train.bin` utilise un autre tokenizer. Il faut donc recréer un corpus avec celui du modèle cible avant d'entraîner le brouillon :
