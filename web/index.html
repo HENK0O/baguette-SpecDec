@@ -184,7 +184,7 @@
         <dt>Top-k</dt><dd>Limite le tirage aux k tokens les plus probables. La valeur 0 désactive ce filtre.</dd>
         <dt>Top-p</dt><dd>Conserve les tokens les plus probables jusqu'à atteindre une probabilité cumulée p. La valeur 1 désactive ce filtre.</dd>
         <dt>Cache d'attention</dt><dd>Réutilise les calculs des tokens précédents. Il est obligatoire en mode automatique. Disponible pour les modèles Baguette sans couches DeltaNet.</dd>
-        <dt>Comparer</dt><dd>Lance les deux générations avec le même prompt et les mêmes réglages, puis affiche leurs mesures.</dd>
+        <dt>Comparer</dt><dd>Lance les deux générations avec le même prompt et les mêmes réglages, puis affiche leurs mesures. Le serveur prépare les formats de blocs au démarrage ; un court échauffement est aussi effectué avant chaque comparaison. La durée complète de la requête est affichée sous les résultats.</dd>
       </dl>
     </section>
     <section class="docs-section">

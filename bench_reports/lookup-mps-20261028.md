@@ -63,11 +63,13 @@ Le parcours vérifié est : choix du mode automatique et du prompt → `POST /ap
 | API | `GET /api/info` et les trois `POST /api/compare` testés renvoient HTTP 200. |
 | Modèles chargés | Après les essais automatiques, `draft_parameters` vaut `null`. Après sélection du nano, il vaut 16 619 136. |
 | Prompt libre | La page affiche « Aucun bloc réutilisé », les mêmes tokens et 64 / 0 passages. La variation de ratio n'est pas présentée comme un gain spéculatif. |
-| Exemple de copie, premier essai de la page | 67,93 → 95,14 tokens/s, soit 1,40× ; 5 blocs vérifiés, 39 / 0 passages, mêmes tokens. |
+| Exemple de copie, après un essai libre | 67,93 → 95,14 tokens/s, soit 1,40× ; 5 blocs vérifiés, 39 / 0 passages, mêmes tokens. |
+| Premier essai après un redémarrage sans préparation | 71,31 → 52,92 tokens/s, soit 0,74× : coût de compilation MPS observé. |
+| Premier essai après préparation générique | Préparation de 3,30 s au lancement ; puis 59,05 → 99,59 tokens/s, soit 1,69×, mêmes tokens. |
 | Ancien assistant | Le choix explicite charge le modèle et affiche ses mesures séparément. |
 | Navigateur | Aucune erreur de console observée. |
 
-L'interface effectue seulement un court échauffement de 4 tokens avant la comparaison et affiche aussi la durée complète de la requête. Les premières exécutions peuvent encore inclure des coûts de compilation MPS qui n'apparaissent pas dans les mesures après échauffement complet.
+Le serveur prépare maintenant les formats de blocs de 1 à 16 tokens sur des préfixes synthétiques de 16 et 64 tokens avant son ouverture. Cette préparation indépendante des exemples utilise le token BOS ; son coût est annoncé dans le terminal et payé une fois au lancement. L'interface effectue ensuite un court échauffement de 4 tokens avant chaque comparaison et affiche aussi la durée complète de la requête. D'autres formats peuvent encore entraîner une compilation MPS ; ces contrôles ne garantissent donc pas un gain à froid sur toute entrée. Les débits du tableau principal restent des mesures après échauffement complet.
 
 ## Reproduire
 

@@ -18,7 +18,8 @@ from tokenizers import Tokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from specdec.baseline import generate  # noqa: E402
+from specdec.baseline import generate, synchronize  # noqa: E402
+from specdec.cache import allocate, forward_all  # noqa: E402
 from specdec.cached_generation import generate_cached, generate_speculative_cached  # noqa: E402
 from specdec.loader import assert_tokenizer_compatible, load_baguette  # noqa: E402
 from specdec.speculative import generate_speculative  # noqa: E402
@@ -28,6 +29,28 @@ from specdec.lookup import generate_lookup  # noqa: E402
 INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
 MAX_BODY_BYTES = 16_384
 MAX_NEW_TOKENS = 256
+
+
+@torch.inference_mode()
+def prepare_mps_blocks(target) -> float:
+    """Warm common block shapes once, using synthetic BOS tokens, not a demo.
+
+    MPS can compile a shape on its first use. Move that one-time work into
+    server preparation, for both ordinary and block verification forwards.
+    """
+    device = next(target.parameters()).device
+    start = time.perf_counter()
+    token = target.cfg.bos_id if target.cfg.bos_id is not None else 0
+    for prefix in sorted({min(16, target.cfg.max_seq_len // 2),
+                          min(64, target.cfg.max_seq_len // 2)}):
+        width_limit = min(16, target.cfg.max_seq_len - prefix)
+        caches = allocate(target, prefix + width_limit)
+        ids = torch.full((1, prefix + width_limit), token, dtype=torch.long, device=device)
+        forward_all(target, ids[:, :prefix], caches, 0, last_only=True)
+        for width in range(1, width_limit + 1):
+            forward_all(target, ids[:, :width], caches, prefix)
+    synchronize(device)
+    return time.perf_counter() - start
 
 
 def _integer(payload: dict, key: str, default: int, minimum: int, maximum: int) -> int:
@@ -260,6 +283,10 @@ def main() -> None:
     target = load_baguette(source, target_checkpoint, device)
     if target.cfg.vocab_size != tokenizer.get_vocab_size():
         parser.error("la taille du vocabulaire du tokenizer ne correspond pas aux modèles")
+    if device.type == "mps" and all(layer.kind == "attn" for layer in target.layers):
+        print("Préparation des blocs MPS…", flush=True)
+        elapsed = prepare_mps_blocks(target)
+        print(f"Préparation terminée en {elapsed:.2f} s.", flush=True)
 
     def load_draft():
         assert_tokenizer_compatible(tokenizer_path, draft_tokenizer_path)

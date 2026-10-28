@@ -46,6 +46,8 @@ python scripts/web_ui.py
 
 Ouvrir ensuite `http://127.0.0.1:8765` dans un navigateur. Seuls Baguette et son tokenizer sont nécessaires au mode automatique. Le brouillon est chargé à la demande lorsqu'il est sélectionné. Pour d'autres fichiers, utiliser `--baguette-source`, `--target-checkpoint`, `--tokenizer` et, si nécessaire, `--draft-checkpoint` et `--draft-tokenizer`. Arrêter le serveur avec `Ctrl+C`.
 
+Sur MPS, le serveur prépare les formats courants de blocs avec des tokens synthétiques avant d'afficher « Interface prête ». Cette étape unique prend quelques secondes et réduit le coût de compilation de la première comparaison.
+
 Garder **Automatique**, une taille de bloc de **8** et le cache activé pour commencer. Le bouton **Exemple de copie** charge un cas de reprise de texte. Les prompts libres courts utilisent les étapes classiques lorsque rien n'est réutilisable ; l'interface le signale sans présenter la variation de mesure comme un gain spéculatif. La vitesse dépend du prompt, et la qualité des réponses reste celle de Baguette.
 
 ### Ligne de commande
