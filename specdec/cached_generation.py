@@ -36,11 +36,11 @@ def generate_cached(
     model.eval()
     device = next(model.parameters()).device
     generator = seeded_generator(device, seed)
-    caches = allocate(model, model.cfg.max_seq_len)
+    caches = allocate(model, len(prompt_ids) + max_new_tokens)
     synchronize(device)
     start = time.perf_counter()
     prompt = torch.tensor([prompt_ids], dtype=torch.long, device=device)
-    logits = forward_all(model, prompt, caches, 0)[0, -1, :]
+    logits = forward_all(model, prompt, caches, 0, last_only=True)[0, -1, :]
     generated: list[int] = []
     first_token_at = 0.0
 
@@ -76,6 +76,11 @@ def generate_speculative_cached(
     seed: int = 0,
     eos_id: int | None = None,
 ) -> SpeculativeResult:
+    """Exact decoding with deferred draft catch-up and one target pass per block.
+
+    Stage times cover model forwards; sampling and acceptance are included in
+    total_seconds. Cache capacity is limited to this request's token budget.
+    """
     if not prompt_ids or max_new_tokens < 1 or draft_length < 1:
         raise ValueError("prompt, max_new_tokens and draft_length must be positive")
     context_limit = min(target.cfg.max_seq_len, draft.cfg.max_seq_len)
@@ -89,8 +94,9 @@ def generate_speculative_cached(
     target.eval()
     draft.eval()
     generator = seeded_generator(device, seed)
-    target_caches = allocate(target, context_limit)
-    draft_caches = allocate(draft, context_limit)
+    cache_length = len(prompt_ids) + max_new_tokens
+    target_caches = allocate(target, cache_length)
+    draft_caches = allocate(draft, cache_length)
     prompt = torch.tensor([prompt_ids], dtype=torch.long, device=device)
     generated: list[int] = []
     proposed = accepted = blocks = 0
@@ -102,12 +108,12 @@ def generate_speculative_cached(
     start = time.perf_counter()
 
     t0 = time.perf_counter()
-    target_next = forward_all(target, prompt, target_caches, 0)[0, -1, :]
+    target_next = forward_all(target, prompt, target_caches, 0, last_only=True)[0, -1, :]
     synchronize(device)
     target_seconds += time.perf_counter() - t0
     target_passes += 1
     t0 = time.perf_counter()
-    draft_next = forward_all(draft, prompt, draft_caches, 0)[0, -1, :]
+    draft_next = forward_all(draft, prompt, draft_caches, 0, last_only=True)[0, -1, :]
     synchronize(device)
     draft_seconds += time.perf_counter() - t0
     draft_passes += 1
@@ -125,14 +131,16 @@ def generate_speculative_cached(
                 token = int(torch.multinomial(q, 1, generator=generator).item())
                 q_vectors.append(q)
             proposals.append(token)
+            # No further proposal needs the logits after the final token.
+            # If accepted, it will enter the cache with the bonus token below.
+            if i + 1 == K or (eos_id is not None and token == eos_id):
+                break
             token_tensor = torch.tensor([[token]], dtype=torch.long, device=device)
             t0 = time.perf_counter()
             draft_next = forward_all(draft, token_tensor, draft_caches, position + i)[0, -1, :]
             synchronize(device)
             draft_seconds += time.perf_counter() - t0
             draft_passes += 1
-            if eos_id is not None and token == eos_id:
-                break
 
         K = len(proposals)
         proposed += K
@@ -154,9 +162,6 @@ def generate_speculative_cached(
             p_vectors += [verification_logits[0, i, :] for i in range(K)]
         else:
             p_vectors = [verification_logits[0, i, :] for i in range(K + 1)]
-        if not greedy:
-            p_vectors = [probabilities(logits, temperature, top_k, top_p)
-                         for logits in p_vectors]
         synchronize(device)
         target_seconds += time.perf_counter() - t0
         target_passes += 1
@@ -165,7 +170,9 @@ def generate_speculative_cached(
         accepted_this_block = 0
         rejected = False
         for i, token in enumerate(proposals):
-            p = p_vectors[i]
+            # Later distributions are unused as soon as a proposal is rejected.
+            p = (p_vectors[i] if greedy else
+                 probabilities(p_vectors[i], temperature, top_k, top_p))
             if greedy:
                 correction = int(torch.argmax(p).item())
                 accept = token == correction
@@ -189,8 +196,9 @@ def generate_speculative_cached(
 
         if not rejected and len(output_block) == K and len(generated) + K < max_new_tokens:
             if eos_id is None or output_block[-1] != eos_id:
-                bonus = (int(torch.argmax(p_vectors[K]).item()) if greedy else
-                         int(torch.multinomial(p_vectors[K], 1, generator=generator).item()))
+                bonus = sample_token(p_vectors[K], greedy=greedy,
+                                     temperature=temperature, top_k=top_k, top_p=top_p,
+                                     generator=generator)
                 output_block.append(bonus)
 
         if not generated:
@@ -205,14 +213,21 @@ def generate_speculative_cached(
         if stopped or len(generated) == max_new_tokens:
             break
 
-        # The correction/bonus enters the draft cache now. The target defers it
-        # to the next verification pass and processes it with that block.
+        # On full acceptance, catch up the unprocessed final proposal and the
+        # bonus in a single pass. On rejection, overwrite the rejected position
+        # with its correction. The target defers that boundary token as before.
         last_token = generated[-1]
         pending_target_token = last_token
-        last_tensor = torch.tensor([[last_token]], dtype=torch.long, device=device)
-        next_position = position + accepted_this_block
+        if rejected:
+            catchup_ids = [last_token]
+            next_position = position + accepted_this_block
+        else:
+            catchup_ids = [proposals[-1], last_token]
+            next_position = position + K - 1
+        catchup_tensor = torch.tensor([catchup_ids], dtype=torch.long, device=device)
         t0 = time.perf_counter()
-        draft_next = forward_all(draft, last_tensor, draft_caches, next_position)[0, -1, :]
+        draft_next = forward_all(draft, catchup_tensor, draft_caches, next_position,
+                                 last_only=True)[0, -1, :]
         synchronize(device)
         draft_seconds += time.perf_counter() - t0
         draft_passes += 1

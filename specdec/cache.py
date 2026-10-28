@@ -12,6 +12,8 @@ import torch.nn.functional as F
 
 
 def allocate(model: torch.nn.Module, max_len: int) -> list[dict]:
+    if not 1 <= max_len <= model.cfg.max_seq_len:
+        raise ValueError("cache length must be within model context")
     if any(layer.kind != "attn" for layer in model.layers):
         raise ValueError("KV cache currently supports attention-only Baguette models")
     parameter = next(model.parameters())
@@ -19,8 +21,13 @@ def allocate(model: torch.nn.Module, max_len: int) -> list[dict]:
 
 
 @torch.inference_mode()
-def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], pos: int) -> torch.Tensor:
-    """Return logits [1, T, vocab] and write T positions into each layer cache."""
+def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], pos: int,
+                *, last_only: bool = False) -> torch.Tensor:
+    """Write T cache positions; optionally project only the final token to logits.
+
+    Verification needs all T logits. Prefill and draft catch-up only need the
+    final one, so their vocabulary projection can be much smaller.
+    """
     from model import apply_partial_rope, repeat_kv
 
     if ids.ndim != 2 or ids.shape[0] != 1 or ids.shape[1] < 1:
@@ -28,9 +35,20 @@ def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], p
     T = ids.shape[1]
     if pos < 0 or pos + T > model.cfg.max_seq_len:
         raise ValueError("cached forward exceeds model context")
+    if caches and pos + T > caches[0]["k"].shape[2]:
+        raise ValueError("cached forward exceeds allocated cache")
     x = model.embed_tokens(ids)
     cos = model.rope_cos[pos:pos + T]
     sin = model.rope_sin[pos:pos + T]
+
+    # One mask is shared by every layer. For a single query, all stored keys
+    # are in its past. Prefill can use SDPA's native causal mask; only a block
+    # appended to a prefix needs an explicit, offset causal mask.
+    causal_mask = None
+    if T > 1 and pos > 0:
+        query_positions = pos + torch.arange(T, device=ids.device)[:, None]
+        key_positions = torch.arange(pos + T, device=ids.device)[None, :]
+        causal_mask = key_positions <= query_positions
 
     for layer, cache in zip(model.layers, caches):
         mixer = layer.mixer
@@ -47,13 +65,9 @@ def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], p
         all_k = cache["k"][:, :, :pos + T]
         all_v = cache["v"][:, :, :pos + T]
 
-        # Query i is at absolute position pos+i; keys after it are invisible.
-        query_positions = pos + torch.arange(T, device=ids.device)[:, None]
-        key_positions = torch.arange(pos + T, device=ids.device)[None, :]
-        causal_mask = key_positions <= query_positions
         attention = F.scaled_dot_product_attention(
             q, repeat_kv(all_k, mixer.n_rep), repeat_kv(all_v, mixer.n_rep),
-            attn_mask=causal_mask, dropout_p=0.0,
+            attn_mask=causal_mask, is_causal=(T > 1 and pos == 0), dropout_p=0.0,
         )
         attention = attention.transpose(1, 2).reshape(B, T, mixer.n_head * mixer.head_dim)
         if mixer.gate_proj is not None:
@@ -61,4 +75,6 @@ def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], p
         x = x + mixer.o_proj(attention)
         x = x + layer.mlp(layer.post_attention_layernorm(x))
 
+    if last_only:
+        x = x[:, -1:, :]
     return model.lm_head(model.norm(x))
