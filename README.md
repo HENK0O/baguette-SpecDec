@@ -1,21 +1,24 @@
 # baguette-SpecDec
 
-`baguette-SpecDec` implémente le **décodage spéculatif** pour [Baguette](https://github.com/HENK0O/baguette). Un petit modèle propose plusieurs tokens, puis le modèle principal les vérifie pour essayer d'accélérer la génération.
+`baguette-SpecDec` implémente le **décodage spéculatif** pour [Baguette](https://github.com/HENK0O/baguette). Le modèle vérifie des propositions par blocs pour réduire le nombre de passages nécessaires à la génération.
 
-La comparaison mesure la vitesse de Baguette seul et celle de Baguette assisté par ce brouillon. L'implémentation actuelle utilise l'architecture Baguette ; la méthode de décodage peut aussi être adaptée à d'autres modèles.
+Le mode **Automatique**, proposé par défaut dans l'interface, réutilise des suites déjà présentes dans le texte. Il ne charge aucun petit modèle. Sur un prompt court sans suite réutilisable, il conserve les étapes classiques de Baguette ; si les vérifications deviennent peu utiles, il les suspend temporairement.
 
-Le code fonctionne et les premiers tests sont reproductibles. Pour l'instant, la version spéculative est encore plus lente que la génération classique sur la machine utilisée. Le projet sert donc aussi à comprendre *pourquoi* une technique prometteuse sur le papier ne donne pas automatiquement un gain de vitesse en pratique.
+Le mode **Brouillon entraîné** garde l'expérience avec le modèle nano. Son taux d'acceptation actuel est trop faible pour accélérer Baguette sur les essais réalisés. Les deux méthodes sont comparées à la même référence Baguette seul.
 
 ## Comment ça marche ?
 
-La génération classique produit un token à la fois avec le modèle cible. Avec le décodage spéculatif, un petit modèle appelé **brouillon** propose plusieurs tokens. Le modèle cible les vérifie ensuite en un seul passage. Les propositions acceptées sont conservées ; au premier refus, un token est tiré à partir d'une distribution de correction.
+La génération classique produit un token à la fois avec le modèle cible. Le mode automatique utilise le [prompt lookup decoding](https://huggingface.co/docs/transformers/assisted_decoding#prompt-lookup-decoding) : un index de petits groupes de tokens retrouve des continuations dans le prompt et le texte déjà généré. Deux tokens sont d'abord contrôlés avec des étapes classiques pour éviter de lancer un gros bloc sur une correspondance fragile. Les suites fiables sont ensuite vérifiées ensemble.
 
-L'acceptation suit la règle `min(1, p(x) / q(x))`, où `p` est la probabilité donnée par la cible et `q` celle du brouillon. Cette correction permet de garder la même distribution de sortie que le modèle cible, même quand le brouillon se trompe. Le code utilise aussi un cache des clés et valeurs de l'attention pour éviter de recalculer tout le début du texte à chaque étape.
+Les tokens sont toujours tirés dans les distributions de Baguette. Tant qu'ils correspondent aux propositions copiées, le bloc peut être conservé ; au premier écart, le token tiré devient la correction et la suite du bloc est abandonnée. Le cache est remis à la bonne position. Ce mécanisme conserve la distribution cible, en greedy comme en échantillonnage.
+
+Avec le brouillon entraîné, l'acceptation suit la règle `min(1, p(x) / q(x))`, où `p` est la probabilité donnée par la cible et `q` celle du brouillon. Une distribution résiduelle corrige les rejets. Les deux moteurs utilisent le cache des clés et valeurs de l'attention pour éviter de recalculer tout le préfixe.
 
 ## Ce qui est déjà fait
 
 - Une génération classique pour servir de référence, avec ou sans cache.
 - Une implémentation du décodage spéculatif avec échantillonnage et correction exacte.
+- Un mode automatique sans assistant, avec détection du texte réutilisable et repli vers la cible seule.
 - Un mode déterministe `--greedy` qui vérifie que la sortie spéculative est identique à celle de la cible seule.
 - Des scripts pour préparer les données, entraîner un brouillon compatible et comparer les vitesses.
 - Des tests sur la correction, l'alignement des logits et le cache.
@@ -34,14 +37,16 @@ pip install -r requirements.txt
 
 ### Interface web locale
 
-Une interface locale en noir et gris permet de comparer les deux méthodes sans saisir une commande à chaque essai. Elle affiche les textes générés, le débit, le temps avant le premier token et le taux d'acceptation du brouillon.
+Une interface locale en noir et gris permet de comparer les méthodes sans saisir une commande à chaque essai. Elle affiche les textes générés, le débit, le temps avant le premier token et le taux d'acceptation des propositions.
 Le bouton « Documentation » explique les réglages et les mesures directement dans la page.
 
 ```bash
 python scripts/web_ui.py
 ```
 
-Ouvrir ensuite `http://127.0.0.1:8765` dans un navigateur. Les modèles sont chargés une fois au démarrage et la page fonctionne uniquement sur cette machine. La commande utilise par défaut les checkpoints et tokenizers locaux indiqués plus bas ; pour d'autres fichiers, utiliser `--baguette-source`, `--target-checkpoint`, `--draft-checkpoint`, `--tokenizer` et `--draft-tokenizer`. Arrêter le serveur avec `Ctrl+C`.
+Ouvrir ensuite `http://127.0.0.1:8765` dans un navigateur. Seuls Baguette et son tokenizer sont nécessaires au mode automatique. Le brouillon est chargé à la demande lorsqu'il est sélectionné. Pour d'autres fichiers, utiliser `--baguette-source`, `--target-checkpoint`, `--tokenizer` et, si nécessaire, `--draft-checkpoint` et `--draft-tokenizer`. Arrêter le serveur avec `Ctrl+C`.
+
+Garder **Automatique**, une taille de bloc de **8** et le cache activé pour commencer. Le bouton **Exemple de copie** charge un cas de reprise de texte. Les prompts libres courts utilisent les étapes classiques lorsque rien n'est réutilisable ; l'interface le signale sans présenter la variation de mesure comme un gain spéculatif. La vitesse dépend du prompt, et la qualité des réponses reste celle de Baguette.
 
 ### Ligne de commande
 
@@ -56,10 +61,24 @@ python scripts/baseline.py \
   --max-new-tokens 32 --cache
 ```
 
-Puis comparer avec le décodage spéculatif, si le brouillon entraîné est disponible localement :
+Comparer avec le mode automatique, sans checkpoint assistant :
 
 ```bash
 python scripts/benchmark.py \
+  --strategy auto \
+  --baguette-source ../LLM \
+  --target-checkpoint ../LLM/baguette-123m-sft.pt \
+  --tokenizer ../LLM/tokenizer.json \
+  --prompt "Bonjour, je suis" \
+  --max-new-tokens 64 --draft-lengths 8 \
+  --temperature 0.5 --top-k 20 --top-p 0.95
+```
+
+Le cache est obligatoire et activé automatiquement pour cette stratégie. Pour retrouver l'expérience avec le brouillon entraîné :
+
+```bash
+python scripts/benchmark.py \
+  --strategy draft \
   --baguette-source ../LLM \
   --target-checkpoint ../LLM/baguette-123m-sft.pt \
   --draft-checkpoint ../LLM/runs/specdec-draft-nano/distill-run1/draft-step3000.pt \
@@ -74,9 +93,15 @@ La sortie indique notamment le débit en tokens par seconde, le temps avant le p
 
 Pour comparer les deux méthodes en génération déterministe, ajouter `--greedy` à la commande de benchmark. Dans ce mode, les réglages de température, top-k et top-p sont ignorés. Le benchmark vérifie aussi que la sortie spéculative est identique à celle de la cible seule. L'option `--greedy` fonctionne également avec `scripts/experiments.py`.
 
-Les deux modèles doivent utiliser **exactement le même tokenizer**. Employer le même checkpoint pour la cible et le brouillon peut aider à vérifier le fonctionnement du code, mais ne donne pas une comparaison de vitesse utile.
+Avec un assistant entraîné, les deux modèles doivent utiliser **exactement le même tokenizer**. Employer le même checkpoint pour la cible et le brouillon peut aider à vérifier le fonctionnement du code, mais ne donne pas une comparaison de vitesse utile.
 
-## Premier résultat
+## Résultats du mode automatique
+
+Sur les 42 essais MPS du 28 octobre 2026, l'automatique conserve les mêmes tokens que Baguette seul. Les gains médians des cas de copie et de répétition vont de **1,23 à 1,63× en échantillonnage**, et de **1,20 à 3,07× en greedy**. Sur les trois prompts libres courts, le repli reste proche de la référence avec environ 0 à 4 % de surcoût. Ces résultats portent sur ce petit jeu de textes, pas sur tous les prompts.
+
+Le [rapport du mode automatique](bench_reports/lookup-mps-20261028.md) contient les cas sans gain, les résultats bruts, la vérification de l'interface et les commandes de reproduction.
+
+## Historique du brouillon nano
 
 Un brouillon `nano` de **16,6 millions de paramètres** a été distillé à partir du modèle cible Baguette de **123 millions de paramètres**. Les essais ont été faits sur Apple MPS avec le cache activé, trois prompts, trois graines par prompt et jusqu'à 64 nouveaux tokens.
 
@@ -128,4 +153,4 @@ Les poids et les données restent dans le dossier local `LLM` et ne sont pas pub
 BAGUETTE_SOURCE=../LLM python -m unittest discover -s tests -v
 ```
 
-La suite consiste surtout à améliorer le brouillon et à refaire les mesures sur davantage de prompts. Un meilleur taux d'acceptation pourrait rendre la méthode intéressante, mais seul un nouveau benchmark permettra de vérifier si elle accélère réellement Baguette.
+Les tests couvrent notamment les acceptations et rejets, les tokens de fin, la remise en état du cache et l'égalité avec la cible sur plusieurs graines. Les prochains essais doivent élargir les textes de reprise et mesurer les cas où le mode automatique ne gagne rien. Le brouillon entraîné reste une piste de recherche à comparer séparément.

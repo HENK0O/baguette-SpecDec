@@ -16,18 +16,20 @@ from specdec.baseline import generate  # noqa: E402
 from specdec.cached_generation import generate_cached, generate_speculative_cached  # noqa: E402
 from specdec.loader import assert_tokenizer_compatible, load_baguette  # noqa: E402
 from specdec.speculative import generate_speculative  # noqa: E402
+from specdec.lookup import generate_lookup  # noqa: E402
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baguette-source", type=Path, required=True)
     parser.add_argument("--target-checkpoint", type=Path, required=True)
-    parser.add_argument("--draft-checkpoint", type=Path, required=True)
+    parser.add_argument("--draft-checkpoint", type=Path)
     parser.add_argument("--tokenizer", type=Path, required=True, help="target tokenizer JSON")
-    parser.add_argument("--draft-tokenizer", type=Path, required=True, help="tokenizer used to train the draft")
+    parser.add_argument("--draft-tokenizer", type=Path, help="tokenizer used to train the draft")
+    parser.add_argument("--strategy", choices=("draft", "auto"), default="draft")
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--max-new-tokens", type=int, default=32)
-    parser.add_argument("--draft-lengths", type=int, nargs="+", default=[2, 4, 6, 8])
+    parser.add_argument("--draft-lengths", type=int, nargs="+")
     parser.add_argument("--greedy", action="store_true", help="compare exact greedy decoding")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--temperature", type=float, default=1.0)
@@ -38,12 +40,16 @@ def main() -> None:
     parser.add_argument("--cache", action="store_true", help="use attention KV caches for both models")
     parser.add_argument("--output", type=Path, help="write measured results as JSON")
     args = parser.parse_args()
+    args.draft_lengths = args.draft_lengths or ([8] if args.strategy == "auto" else [2, 4, 6, 8])
     if any(k < 1 for k in args.draft_lengths):
         parser.error("draft lengths must be positive")
     if args.warmup_runs < 0:
         parser.error("warmup-runs must be nonnegative")
 
-    assert_tokenizer_compatible(args.tokenizer, args.draft_tokenizer)
+    if args.strategy == "draft":
+        if args.draft_checkpoint is None or args.draft_tokenizer is None:
+            parser.error("--strategy draft requires --draft-checkpoint and --draft-tokenizer")
+        assert_tokenizer_compatible(args.tokenizer, args.draft_tokenizer)
     if args.device == "auto":
         name = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     else:
@@ -51,9 +57,10 @@ def main() -> None:
     device = torch.device(name)
     tokenizer = Tokenizer.from_file(str(args.tokenizer))
     target = load_baguette(args.baguette_source, args.target_checkpoint, device)
-    draft = load_baguette(args.baguette_source, args.draft_checkpoint, device)
+    draft = (load_baguette(args.baguette_source, args.draft_checkpoint, device)
+             if args.strategy == "draft" else None)
     vocab_size = tokenizer.get_vocab_size()
-    if target.cfg.vocab_size != vocab_size or draft.cfg.vocab_size != vocab_size:
+    if target.cfg.vocab_size != vocab_size or (draft is not None and draft.cfg.vocab_size != vocab_size):
         raise ValueError("checkpoint vocab size differs from tokenizer")
     ids = tokenizer.encode(args.prompt).ids
     if not ids:
@@ -63,23 +70,31 @@ def main() -> None:
                     temperature=args.temperature,
                     top_k=args.top_k, top_p=args.top_p, seed=args.seed,
                     eos_id=target.cfg.eos_id)
-    baseline_fn = generate_cached if args.cache else generate
-    speculative_fn = generate_speculative_cached if args.cache else generate_speculative
+    cache = args.cache or args.strategy == "auto"
+    baseline_fn = generate_cached if cache else generate
+    speculative_fn = generate_speculative_cached if cache else generate_speculative
+
+    def run_spec(k, options):
+        if args.strategy == "auto":
+            return generate_lookup(target, ids, draft_length=k, **options)
+        return speculative_fn(target, draft, ids, draft_length=k, **options)
+
     warmup_settings = {**settings, "max_new_tokens": min(4, args.max_new_tokens)}
     for _ in range(args.warmup_runs):
         baseline_fn(target, ids, **warmup_settings)
         for K in args.draft_lengths:
-            speculative_fn(target, draft, ids, draft_length=K, **warmup_settings)
+            run_spec(K, warmup_settings)
     baseline = baseline_fn(target, ids, **settings)
     results = {
         "prompt": args.prompt,
         "device": name,
         "seed": args.seed,
         "greedy": args.greedy,
-        "cache": args.cache,
+        "cache": cache,
+        "strategy": args.strategy,
         "warmup_runs": args.warmup_runs,
         "target_checkpoint": str(args.target_checkpoint),
-        "draft_checkpoint": str(args.draft_checkpoint),
+        "draft_checkpoint": str(args.draft_checkpoint) if draft is not None else None,
         "baseline": {
             "generated_tokens": len(baseline.token_ids),
             "tokens_per_second": baseline.tokens_per_second,
@@ -89,11 +104,15 @@ def main() -> None:
         "speculative": [],
     }
     for K in args.draft_lengths:
-        result = speculative_fn(target, draft, ids, draft_length=K, **settings)
+        result = run_spec(K, settings)
         if args.greedy and result.token_ids != baseline.token_ids:
             raise RuntimeError(f"greedy speculative output differs from target baseline for K={K}")
         results["speculative"].append({
             "draft_length": K,
+            "execution": ("draft" if args.strategy == "draft" else
+                          "lookup" if result.verification_blocks else "target"),
+            "same_tokens": result.token_ids == baseline.token_ids,
+            "verification_blocks": getattr(result, "verification_blocks", result.blocks),
             "generated_tokens": len(result.token_ids),
             "tokens_per_second": result.tokens_per_second,
             "speedup": result.tokens_per_second / baseline.tokens_per_second,

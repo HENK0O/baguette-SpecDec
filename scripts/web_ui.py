@@ -7,6 +7,7 @@ import json
 import math
 import sys
 import threading
+import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,6 +22,7 @@ from specdec.baseline import generate  # noqa: E402
 from specdec.cached_generation import generate_cached, generate_speculative_cached  # noqa: E402
 from specdec.loader import assert_tokenizer_compatible, load_baguette  # noqa: E402
 from specdec.speculative import generate_speculative  # noqa: E402
+from specdec.lookup import generate_lookup  # noqa: E402
 
 
 INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
@@ -47,27 +49,31 @@ def _number(payload: dict, key: str, default: float, minimum: float, maximum: fl
 
 
 class ComparisonService:
-    def __init__(self, target, draft, tokenizer: Tokenizer, device: torch.device):
+    def __init__(self, target, draft, tokenizer: Tokenizer, device: torch.device,
+                 *, draft_loader=None):
         self.target = target
         self.draft = draft
+        self.draft_loader = draft_loader
         self.tokenizer = tokenizer
         self.device = device
         self.lock = threading.Lock()
-        self.context_limit = min(target.cfg.max_seq_len, draft.cfg.max_seq_len)
-        self.cache_supported = (all(layer.kind == "attn" for layer in target.layers)
-                                and all(layer.kind == "attn" for layer in draft.layers))
+        self.context_limit = target.cfg.max_seq_len
+        self.cache_supported = all(layer.kind == "attn" for layer in target.layers)
 
     def info(self) -> dict:
         return {
             "device": self.device.type,
             "target_parameters": sum(p.numel() for p in self.target.parameters()),
-            "draft_parameters": sum(p.numel() for p in self.draft.parameters()),
+            "draft_parameters": (sum(p.numel() for p in self.draft.parameters())
+                                 if self.draft is not None else None),
+            "draft_available": self.draft is not None or self.draft_loader is not None,
             "vocab_size": self.target.cfg.vocab_size,
             "context_limit": self.context_limit,
             "cache_supported": self.cache_supported,
         }
 
     def compare(self, payload: dict) -> dict:
+        request_start = time.perf_counter()
         if not isinstance(payload, dict):
             raise ValueError("La requête doit contenir un objet JSON")
         prompt = payload.get("prompt", "")
@@ -79,14 +85,19 @@ class ComparisonService:
         if mode not in ("sampling", "greedy"):
             raise ValueError("Mode de génération inconnu")
         greedy = mode == "greedy"
+        strategy = payload.get("strategy", "auto")
+        if strategy not in ("auto", "draft"):
+            raise ValueError("Stratégie inconnue")
         max_new_tokens = _integer(payload, "max_new_tokens", 64, 1, MAX_NEW_TOKENS)
-        draft_length = _integer(payload, "draft_length", 2, 1, 16)
+        draft_length = _integer(payload, "draft_length", 8 if strategy == "auto" else 2, 1, 16)
         seed = _integer(payload, "seed", 42, 0, 2**32 - 1)
         cache = payload.get("cache", self.cache_supported)
         if not isinstance(cache, bool):
             raise ValueError("cache doit être vrai ou faux")
         if cache and not self.cache_supported:
             raise ValueError("Le cache n'est disponible que pour les modèles sans DeltaNet")
+        if strategy == "auto" and not cache:
+            raise ValueError("Le mode automatique nécessite le cache d'attention")
         temperature = _number(payload, "temperature", 0.5, 0, 10, strict_minimum=True)
         top_k = _integer(payload, "top_k", min(20, self.target.cfg.vocab_size),
                          0, self.target.cfg.vocab_size)
@@ -105,18 +116,41 @@ class ComparisonService:
         speculative_fn = generate_speculative_cached if cache else generate_speculative
         warmup = {**settings, "max_new_tokens": min(4, max_new_tokens)}
         with self.lock:
+            if strategy == "draft":
+                if self.draft is None:
+                    if self.draft_loader is None:
+                        raise ValueError("Aucun checkpoint brouillon disponible ; utiliser le mode automatique")
+                    draft = self.draft_loader()
+                    if draft.cfg.vocab_size != self.target.cfg.vocab_size:
+                        raise ValueError("Vocabulaire du brouillon incompatible")
+                    self.draft = draft
+                limit = min(self.context_limit, self.draft.cfg.max_seq_len)
+                if len(ids) + max_new_tokens > limit:
+                    raise ValueError(f"Le brouillon limite cette requête à {limit} tokens")
+                if cache and not all(layer.kind == "attn" for layer in self.draft.layers):
+                    raise ValueError("Le brouillon ne prend pas en charge le cache")
+
+            def run_spec(options):
+                if strategy == "auto":
+                    return generate_lookup(self.target, ids, draft_length=draft_length, **options)
+                return speculative_fn(self.target, self.draft, ids,
+                                      draft_length=draft_length, **options)
+
             baseline_fn(self.target, ids, **warmup)
-            speculative_fn(self.target, self.draft, ids, draft_length=draft_length,
-                           **warmup)
+            run_spec(warmup)
             baseline = baseline_fn(self.target, ids, **settings)
-            speculative = speculative_fn(self.target, self.draft, ids,
-                                         draft_length=draft_length, **settings)
+            speculative = run_spec(settings)
         if greedy and baseline.token_ids != speculative.token_ids:
             raise RuntimeError("La sortie greedy spéculative diffère de la cible")
 
         return {
             "device": self.device.type,
             "greedy": greedy,
+            "strategy": strategy,
+            "execution": ("draft" if strategy == "draft" else
+                          "lookup" if speculative.verification_blocks else "target"),
+            "same_tokens": baseline.token_ids == speculative.token_ids,
+            "request_seconds": time.perf_counter() - request_start,
             "baseline": {
                 "text": self.tokenizer.decode(ids + baseline.token_ids,
                                               skip_special_tokens=False),
@@ -133,9 +167,13 @@ class ComparisonService:
                 "time_to_first_token": speculative.time_to_first_token,
                 "total_seconds": speculative.total_seconds,
                 "acceptance_rate": speculative.acceptance_rate,
+                "proposed_tokens": speculative.proposed,
+                "accepted_tokens": speculative.accepted,
                 "accepted_per_block": speculative.accepted_per_block,
                 "target_forward_passes": speculative.target_forward_passes,
                 "draft_forward_passes": speculative.draft_forward_passes,
+                "verification_blocks": getattr(speculative, "verification_blocks", speculative.blocks),
+                "fallback_tokens": getattr(speculative, "fallback_tokens", 0),
                 "speedup": speculative.tokens_per_second / baseline.tokens_per_second,
             },
         }
@@ -212,19 +250,24 @@ def main() -> None:
     tokenizer_path = args.tokenizer or source / "tokenizer.json"
     draft_tokenizer_path = (args.draft_tokenizer or
                             source / "runs/specdec-draft-nano/tokenizer.json")
-    for path in (target_checkpoint, draft_checkpoint, tokenizer_path, draft_tokenizer_path):
+    for path in (target_checkpoint, tokenizer_path):
         if not path.is_file():
             parser.error(f"fichier introuvable : {path}")
-    assert_tokenizer_compatible(tokenizer_path, draft_tokenizer_path)
     name = ("cuda" if torch.cuda.is_available() else
             "mps" if torch.backends.mps.is_available() else "cpu") if args.device == "auto" else args.device
     device = torch.device(name)
     tokenizer = Tokenizer.from_file(str(tokenizer_path))
     target = load_baguette(source, target_checkpoint, device)
-    draft = load_baguette(source, draft_checkpoint, device)
-    if target.cfg.vocab_size != tokenizer.get_vocab_size() or draft.cfg.vocab_size != tokenizer.get_vocab_size():
+    if target.cfg.vocab_size != tokenizer.get_vocab_size():
         parser.error("la taille du vocabulaire du tokenizer ne correspond pas aux modèles")
-    service = ComparisonService(target, draft, tokenizer, device)
+
+    def load_draft():
+        assert_tokenizer_compatible(tokenizer_path, draft_tokenizer_path)
+        return load_baguette(source, draft_checkpoint, device)
+
+    available = draft_checkpoint.is_file() and draft_tokenizer_path.is_file()
+    service = ComparisonService(target, None, tokenizer, device,
+                                draft_loader=load_draft if available else None)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(service))
     print(f"Interface prête : http://127.0.0.1:{args.port} ({name})", flush=True)
     try:

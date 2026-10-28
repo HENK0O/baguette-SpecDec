@@ -32,6 +32,9 @@
     .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
     .form-card { padding: 24px; }
     .section-heading { margin: 0 0 19px; font-size: 16px; letter-spacing: -.01em; }
+    .prompt-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+    .prompt-heading label { margin: 0; }
+    .strategy-note { margin: 17px 0 0; color: var(--muted); font-size: 13px; }
     label { display: block; color: var(--ink); font-weight: 600; font-size: 13px; margin-bottom: 8px; }
     textarea, input[type="number"], select { width: 100%; background: #0c0d0e; border: 1px solid #393c3e; border-radius: 5px; color: var(--ink); outline: none; }
     textarea:focus, input:focus, select:focus { border-color: #a8abad; box-shadow: 0 0 0 2px #26292a; }
@@ -116,22 +119,24 @@
   <main class="shell">
     <section class="hero">
       <h1>Décodage spéculatif</h1>
-      <p>Baguette seul, puis Baguette assisté par un petit modèle brouillon. Cette page mesure l'effet sur la vitesse de génération.</p>
+      <p>Accélérer Baguette en vérifiant des blocs de texte réutilisable. La référence reste Baguette seul, avec les mêmes réglages.</p>
     </section>
 
     <form class="card form-card" id="form">
       <h2 class="section-heading">Réglages</h2>
-      <label for="prompt">Prompt</label>
+      <div class="prompt-heading"><label for="prompt">Prompt</label><button class="quiet-button" id="copy-example" type="button">Exemple de copie</button></div>
       <textarea id="prompt" maxlength="4000" required>Bonjour, je suis</textarea>
       <div class="grid">
+        <div><label for="strategy">Accélération</label><select id="strategy"><option value="auto">Automatique</option><option value="draft">Brouillon entraîné</option></select></div>
         <div><label for="mode">Mode</label><select id="mode"><option value="sampling">Échantillonnage</option><option value="greedy">Greedy</option></select></div>
         <div><label for="max-new-tokens">Nouveaux tokens</label><input id="max-new-tokens" type="number" min="1" max="256" value="64" required></div>
-        <div><label for="draft-length">Taille du bloc</label><input id="draft-length" type="number" min="1" max="16" value="2" required></div>
+        <div><label for="draft-length">Taille du bloc</label><input id="draft-length" type="number" min="3" max="16" value="8" required></div>
         <div><label for="seed">Graine</label><input id="seed" type="number" min="0" max="4294967295" value="42" required></div>
         <div><label for="temperature">Température</label><input id="temperature" data-sampling type="number" min="0.01" max="10" step="0.01" value="0.5" required></div>
         <div><label for="top-k">Top-k</label><input id="top-k" data-sampling type="number" min="0" step="1" value="20" required></div>
         <div><label for="top-p">Top-p</label><input id="top-p" data-sampling type="number" min="0.01" max="1" step="0.01" value="0.95" required></div>
       </div>
+      <p class="strategy-note" id="strategy-note">Automatique réutilise des suites présentes dans le texte. Sans correspondance fiable, Baguette continue seul.</p>
       <div class="form-bottom">
         <label class="check" for="cache"><input id="cache" type="checkbox" checked>Utiliser le cache d'attention</label>
         <div class="actions"><span class="hint">Temps mesurés après chargement des modèles.</span><button id="submit" type="submit">Comparer</button></div>
@@ -151,12 +156,12 @@
           <dl><dt>Débit</dt><dd id="baseline-tps"></dd><dt>Premier token</dt><dd id="baseline-first"></dd><dt>Durée totale</dt><dd id="baseline-total"></dd><dt>Tokens générés</dt><dd id="baseline-count"></dd></dl>
         </article>
         <article class="card panel">
-          <div class="panel-title"><h3>Baguette + brouillon</h3></div>
+          <div class="panel-title"><h3 id="spec-title">Baguette · automatique</h3></div>
           <div class="generated" id="spec-text"></div>
-          <dl><dt>Débit</dt><dd id="spec-tps"></dd><dt>Premier token</dt><dd id="spec-first"></dd><dt>Durée totale</dt><dd id="spec-total"></dd><dt>Tokens générés</dt><dd id="spec-count"></dd><dt>Propositions acceptées</dt><dd id="spec-accept"></dd><dt>Passages cible / brouillon</dt><dd id="spec-passes"></dd></dl>
+          <dl><dt>Débit</dt><dd id="spec-tps"></dd><dt>Premier token</dt><dd id="spec-first"></dd><dt>Durée totale</dt><dd id="spec-total"></dd><dt>Tokens générés</dt><dd id="spec-count"></dd><dt>Propositions acceptées</dt><dd id="spec-accept"></dd><dt>Blocs vérifiés</dt><dd id="spec-blocks"></dd><dt>Passages cible / brouillon</dt><dd id="spec-passes"></dd></dl>
         </article>
       </div>
-      <footer>Les débits varient selon le matériel et le prompt. En mode échantillonnage, les deux textes peuvent être différents tout en suivant la même distribution cible.</footer>
+      <footer>Le gain dépend du texte réutilisable. La distribution de Baguette est conservée ; la qualité des réponses reste celle du modèle. <span id="request-note"></span></footer>
     </section>
   </main>
   <dialog id="docs-dialog" aria-labelledby="docs-title">
@@ -164,19 +169,21 @@
       <h2 id="docs-title">Documentation</h2>
       <button class="quiet-button" id="close-docs" type="button">Fermer</button>
     </div>
-    <p class="docs-intro">La page compare Baguette seul à Baguette aidé par un petit modèle brouillon. Les réglages actifs sont les mêmes pour les deux méthodes.</p>
+    <p class="docs-intro">La page mesure une accélération par rapport à Baguette seul. Les deux colonnes utilisent les mêmes réglages et la même distribution cible.</p>
     <section class="docs-section">
       <h3>Réglages</h3>
       <dl class="docs-list">
         <dt>Prompt</dt><dd>Début du texte donné au modèle avant la génération.</dd>
+        <dt>Accélération</dt><dd>Automatique : propose des suites déjà présentes dans le prompt ou le texte généré, sans charger de petit modèle. Deux tokens sont d'abord contrôlés normalement, puis les suites fiables sont vérifiées par blocs. En l'absence de correspondance, la génération reste classique. Brouillon entraîné : conserve l'expérience avec le petit modèle nano ; il peut encore ralentir la cible.</dd>
+        <dt>Exemple de copie</dt><dd>Charge un prompt de reprise de texte adapté à la réutilisation. Le gain doit être mesuré sur chaque essai ; il n'est pas garanti sur tous les prompts.</dd>
         <dt>Mode</dt><dd>Échantillonnage : les tokens sont tirés selon leurs probabilités, donc les deux textes peuvent différer. Greedy : le token le plus probable est choisi à chaque étape ; la sortie spéculative doit être identique à celle de Baguette seul. Température, Top-k et Top-p sont ignorés en mode greedy.</dd>
         <dt>Nouveaux tokens</dt><dd>Nombre maximal de tokens à générer. La génération peut s'arrêter plus tôt si le modèle produit un token de fin.</dd>
-        <dt>Taille du bloc</dt><dd>Nombre maximal de tokens proposés par le brouillon avant une vérification par Baguette.</dd>
+        <dt>Taille du bloc</dt><dd>Nombre maximal de tokens proposés avant une vérification. Le mode automatique démarre avec 8 tokens. Le brouillon entraîné démarre avec 2 ; il utilise un autre mécanisme de proposition.</dd>
         <dt>Graine</dt><dd>Fixe les tirages aléatoires pour reproduire un essai. Elle n'a pas d'effet sur le texte en mode greedy.</dd>
         <dt>Température</dt><dd>En échantillonnage, une valeur sous 1 favorise les tokens les plus probables ; une valeur au-dessus de 1 augmente la variété.</dd>
         <dt>Top-k</dt><dd>Limite le tirage aux k tokens les plus probables. La valeur 0 désactive ce filtre.</dd>
         <dt>Top-p</dt><dd>Conserve les tokens les plus probables jusqu'à atteindre une probabilité cumulée p. La valeur 1 désactive ce filtre.</dd>
-        <dt>Cache d'attention</dt><dd>Réutilise les calculs des tokens précédents. Disponible pour les modèles Baguette sans couches DeltaNet.</dd>
+        <dt>Cache d'attention</dt><dd>Réutilise les calculs des tokens précédents. Il est obligatoire en mode automatique. Disponible pour les modèles Baguette sans couches DeltaNet.</dd>
         <dt>Comparer</dt><dd>Lance les deux générations avec le même prompt et les mêmes réglages, puis affiche leurs mesures.</dd>
       </dl>
     </section>
@@ -188,7 +195,8 @@
         <dt>Premier token</dt><dd>Temps écoulé avant l'arrivée du premier token.</dd>
         <dt>Durée totale</dt><dd>Temps de génération du texte affiché, sans le chargement des modèles.</dd>
         <dt>Tokens générés</dt><dd>Nombre de tokens réellement produits ; il peut être inférieur à la limite demandée si la génération s'arrête plus tôt.</dd>
-        <dt>Propositions acceptées</dt><dd>Part des tokens proposés par le brouillon que Baguette a conservés.</dd>
+        <dt>Propositions acceptées</dt><dd>Part des propositions conservées, qu'elles viennent du texte ou du petit modèle. Un tiret indique qu'aucune proposition n'a été disponible.</dd>
+        <dt>Blocs vérifiés</dt><dd>Nombre de blocs réellement traités par le modèle. Si ce nombre vaut zéro en mode automatique, la page indique un repli vers Baguette seul et ne présente pas la variation du ratio comme un gain spéculatif.</dd>
         <dt>Passages cible / brouillon</dt><dd>Nombre d'appels à chaque modèle pendant la génération mesurée.</dd>
       </dl>
     </section>
@@ -202,6 +210,28 @@
     const docsDialog = byId('docs-dialog');
     byId('open-docs').addEventListener('click', () => docsDialog.showModal());
     byId('close-docs').addEventListener('click', () => docsDialog.close());
+    let cacheAvailable = true;
+
+    function updateStrategy(resetLength = false) {
+      const auto = byId('strategy').value === 'auto';
+      byId('cache').disabled = auto || !cacheAvailable;
+      if (auto) byId('cache').checked = true;
+      byId('draft-length').min = auto ? 3 : 1;
+      if (resetLength) byId('draft-length').value = auto ? 8 : 2;
+      byId('strategy-note').textContent = auto
+        ? 'Automatique réutilise le texte sans petit modèle. Sans suite fiable, Baguette continue seul.'
+        : 'Expérimental : le petit modèle est chargé à la demande. Il peut ralentir la génération.';
+    }
+    byId('strategy').addEventListener('change', () => updateStrategy(true));
+    byId('copy-example').addEventListener('click', () => {
+      byId('prompt').value = "Recopie exactement ce texte :\nLa bibliothèque ouvre à neuf heures. Les lecteurs peuvent emprunter trois livres pour deux semaines. Le retour des livres se fait à l'accueil.\nTexte recopié :\nLa bibliothèque ouvre";
+      byId('strategy').value = 'auto';
+      updateStrategy(true);
+      byId('results').hidden = true;
+      byId('prompt').focus();
+    });
+    byId('form').addEventListener('input', () => { byId('results').hidden = true; });
+    byId('form').addEventListener('change', () => { byId('results').hidden = true; });
 
     function updateMode() {
       const greedy = byId('mode').value === 'greedy';
@@ -212,22 +242,30 @@
     fetch('/api/info').then(async response => {
       if (!response.ok) throw new Error('Impossible de lire les informations des modèles');
       const info = await response.json();
-      byId('device').textContent = `Cible ${number(info.target_parameters / 1e6, 1)} M · brouillon ${number(info.draft_parameters / 1e6, 1)} M · ${info.device.toUpperCase()}`;
+      byId('device').textContent = `Baguette ${number(info.target_parameters / 1e6, 1)} M · ${info.device.toUpperCase()}`;
+      cacheAvailable = info.cache_supported;
+      byId('strategy').querySelector('option[value="draft"]').disabled = !info.draft_available;
+      byId('strategy').querySelector('option[value="auto"]').disabled = !info.cache_supported;
+      if (!info.cache_supported) byId('strategy').value = 'draft';
       byId('cache').checked = info.cache_supported;
       byId('cache').disabled = !info.cache_supported;
       byId('top-k').max = info.vocab_size;
       byId('top-k').value = Math.min(20, info.vocab_size);
+      updateStrategy();
     }).catch(error => { byId('device').textContent = error.message; });
 
     byId('form').addEventListener('submit', async event => {
       event.preventDefault();
       byId('error').hidden = true;
+      byId('results').hidden = true;
       byId('progress').hidden = false;
-      byId('submit').disabled = true;
+      const controls = Array.from(byId('form').querySelectorAll('input, select, textarea, button'), el => [el, el.disabled]);
+      controls.forEach(([el]) => { el.disabled = true; });
       byId('submit').textContent = 'Calcul en cours…';
       const payload = {
         prompt: byId('prompt').value,
         mode: byId('mode').value,
+        strategy: byId('strategy').value,
         max_new_tokens: Number(byId('max-new-tokens').value),
         draft_length: Number(byId('draft-length').value),
         seed: Number(byId('seed').value),
@@ -244,10 +282,17 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'La comparaison a échoué');
         byId('results').hidden = false;
-        byId('result-note').textContent = data.greedy ? 'Mode greedy · sorties identiques vérifiées' : 'Mode échantillonnage';
+        byId('result-note').textContent = `${data.greedy ? 'Greedy' : 'Échantillonnage'}${data.same_tokens ? ' · mêmes tokens vérifiés' : ''}`;
         byId('speedup').textContent = `${number(data.speculative.speedup)}×`;
-        byId('speed-label').textContent = data.speculative.speedup >= 1 ? 'Avec brouillon : plus rapide' : 'Baguette seul : plus rapide';
-        byId('speed-note').textContent = 'Débit avec brouillon / débit de Baguette seul.';
+        if (data.execution === 'target') {
+          byId('spec-title').textContent = 'Baguette seul · repli automatique';
+          byId('speed-label').textContent = 'Aucun bloc réutilisé';
+          byId('speed-note').textContent = 'Étapes classiques uniquement. Le ratio reflète la variation des deux mesures.';
+        } else {
+          byId('spec-title').textContent = data.execution === 'lookup' ? 'Baguette · réutilisation du texte' : 'Baguette + brouillon entraîné';
+          byId('speed-label').textContent = data.speculative.speedup > 1 ? 'Accélération mesurée' : 'Pas de gain sur cet essai';
+          byId('speed-note').textContent = data.execution === 'lookup' ? 'Texte réutilisé, aucun passage dans un petit modèle.' : 'Débit avec brouillon / débit de Baguette seul.';
+        }
         byId('baseline-text').textContent = data.baseline.text;
         byId('spec-text').textContent = data.speculative.text;
         byId('baseline-tps').textContent = tps(data.baseline.tokens_per_second);
@@ -258,14 +303,16 @@
         byId('spec-first').textContent = seconds(data.speculative.time_to_first_token);
         byId('spec-total').textContent = seconds(data.speculative.total_seconds);
         byId('spec-count').textContent = data.speculative.generated_tokens;
-        byId('spec-accept').textContent = `${number(data.speculative.acceptance_rate * 100, 1)} %`;
+        byId('spec-accept').textContent = data.speculative.proposed_tokens ? `${number(data.speculative.acceptance_rate * 100, 1)} %` : '—';
+        byId('spec-blocks').textContent = data.speculative.verification_blocks;
         byId('spec-passes').textContent = `${data.speculative.target_forward_passes} / ${data.speculative.draft_forward_passes}`;
+        byId('request-note').textContent = `Comparaison complète : ${seconds(data.request_seconds)}, échauffement et deux méthodes inclus.`;
       } catch (error) {
         byId('error').textContent = error.message;
         byId('error').hidden = false;
       } finally {
         byId('progress').hidden = true;
-        byId('submit').disabled = false;
+        controls.forEach(([el, disabled]) => { el.disabled = disabled; });
         byId('submit').textContent = 'Comparer';
       }
     });

@@ -10,6 +10,7 @@ from specdec.cache import allocate, forward_all
 from specdec.baseline import generate
 from specdec.cached_generation import generate_cached, generate_speculative_cached
 from specdec.speculative import generate_speculative
+from specdec.lookup import generate_lookup
 
 
 class CacheTests(unittest.TestCase):
@@ -125,6 +126,16 @@ class CacheTests(unittest.TestCase):
                                                  max_new_tokens=5, draft_length=2, seed=7)
         self.assertEqual(cached_spec.token_ids, reference_spec.token_ids)
         self.assertEqual(cached_spec.target_forward_passes, cached_spec.blocks + 1)
+
+    def test_lookup_matches_cached_target(self):
+        for greedy in (False, True):
+            for k in (1, 2, 8):
+                settings = dict(max_new_tokens=6, greedy=greedy, seed=3,
+                                temperature=0.8, top_k=16, top_p=0.95)
+                expected = generate_cached(self.model, [1, 2] * 5, **settings)
+                actual = generate_lookup(self.model, [1, 2] * 5, draft_length=k, **settings)
+                self.assertEqual(actual.token_ids, expected.token_ids)
+                self.assertEqual(actual.draft_forward_passes, 0)
 
     def test_cached_rejection_matches_reference(self):
         from model import ModelConfig, build_model
