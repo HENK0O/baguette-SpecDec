@@ -174,7 +174,7 @@
       <h3>Réglages</h3>
       <dl class="docs-list">
         <dt>Prompt</dt><dd>Début du texte donné au modèle avant la génération.</dd>
-        <dt>Accélération</dt><dd>Automatique : propose des suites déjà présentes dans le prompt ou le texte généré, sans charger de petit modèle. Deux tokens sont d'abord contrôlés normalement, puis les suites fiables sont vérifiées par blocs. En l'absence de correspondance, la génération reste classique. Brouillon entraîné : conserve l'expérience avec le petit modèle nano ; il peut encore ralentir la cible.</dd>
+        <dt>Accélération</dt><dd>Automatique : propose des suites déjà présentes dans le prompt ou le texte généré, sans charger de petit modèle. Deux tokens sont d'abord contrôlés normalement. Après deux blocs entièrement acceptés, un seul contrôle préalable suffit ; tous les tokens suivants restent vérifiés par Baguette. Une divergence rétablit les deux contrôles. Les répétitions apparues après un prompt court peuvent aussi activer la réutilisation en cours de génération. En l'absence de correspondance, la génération reste classique. Brouillon entraîné : conserve l'expérience avec le petit modèle nano ; il peut encore ralentir la cible.</dd>
         <dt>Exemple de copie</dt><dd>Charge un prompt de reprise de texte adapté à la réutilisation. Le gain doit être mesuré sur chaque essai ; il n'est pas garanti sur tous les prompts.</dd>
         <dt>Mode</dt><dd>Échantillonnage : les tokens sont tirés selon leurs probabilités, donc les deux textes peuvent différer. Greedy : le token le plus probable est choisi à chaque étape ; la sortie spéculative doit être identique à celle de Baguette seul. Température, Top-k et Top-p sont ignorés en mode greedy.</dd>
         <dt>Nouveaux tokens</dt><dd>Nombre maximal de tokens à générer. La génération peut s'arrêter plus tôt si le modèle produit un token de fin.</dd>
@@ -190,7 +190,7 @@
     <section class="docs-section">
       <h3>Lire les résultats</h3>
       <dl class="docs-list">
-        <dt>Vitesse relative</dt><dd>Rapport entre les débits avec et sans brouillon. Au-dessus de 1×, le décodage spéculatif est plus rapide.</dd>
+        <dt>Vitesse relative</dt><dd>Débit du mode sélectionné divisé par celui de Baguette seul. Au-dessus de 1×, le décodage spéculatif est plus rapide.</dd>
         <dt>Débit</dt><dd>Nombre de tokens générés par seconde, après chargement des modèles.</dd>
         <dt>Premier token</dt><dd>Temps écoulé avant l'arrivée du premier token.</dd>
         <dt>Durée totale</dt><dd>Temps de génération du texte affiché, sans le chargement des modèles.</dd>
@@ -291,7 +291,9 @@
         } else {
           byId('spec-title').textContent = data.execution === 'lookup' ? 'Baguette · réutilisation du texte' : 'Baguette + brouillon entraîné';
           byId('speed-label').textContent = data.speculative.speedup > 1 ? 'Accélération mesurée' : 'Pas de gain sur cet essai';
-          byId('speed-note').textContent = data.execution === 'lookup' ? 'Texte réutilisé, aucun passage dans un petit modèle.' : 'Débit avec brouillon / débit de Baguette seul.';
+          byId('speed-note').textContent = data.execution === 'lookup'
+            ? `${data.speculative.discovered_reuse ? 'Répétition détectée pendant la génération. ' : ''}Texte réutilisé, aucun petit modèle.${data.speculative.adaptive_blocks ? ` ${data.speculative.adaptive_blocks} ${data.speculative.adaptive_blocks > 1 ? 'blocs' : 'bloc'} avec contrôle préalable réduit.` : ''}`
+            : 'Débit avec brouillon / débit de Baguette seul.';
         }
         byId('baseline-text').textContent = data.baseline.text;
         byId('spec-text').textContent = data.speculative.text;

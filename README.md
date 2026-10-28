@@ -8,7 +8,7 @@ Le mode **Brouillon entraîné** garde l'expérience avec le modèle nano. Son t
 
 ## Comment ça marche ?
 
-La génération classique produit un token à la fois avec le modèle cible. Le mode automatique utilise le [prompt lookup decoding](https://huggingface.co/docs/transformers/assisted_decoding#prompt-lookup-decoding) : un index de petits groupes de tokens retrouve des continuations dans le prompt et le texte déjà généré. Deux tokens sont d'abord contrôlés avec des étapes classiques pour éviter de lancer un gros bloc sur une correspondance fragile. Les suites fiables sont ensuite vérifiées ensemble.
+La génération classique produit un token à la fois avec le modèle cible. Le mode automatique utilise le [prompt lookup decoding](https://huggingface.co/docs/transformers/assisted_decoding#prompt-lookup-decoding) : un index de petits groupes de tokens retrouve des continuations dans le prompt et le texte déjà généré. Deux tokens sont d'abord contrôlés avec des étapes classiques pour éviter de lancer un gros bloc sur une correspondance fragile. Après deux blocs entièrement acceptés, ce contrôle préalable passe à un token : les autres tokens restent vérifiés ensemble par Baguette. Au premier écart, le moteur revient aux deux contrôles. Sur un prompt court, la recherche est relancée après 32 tokens générés, puis tous les 16 tokens tant qu'aucune suite réutilisable n'est trouvée.
 
 Les tokens sont toujours tirés dans les distributions de Baguette. Tant qu'ils correspondent aux propositions copiées, le bloc peut être conservé ; au premier écart, le token tiré devient la correction et la suite du bloc est abandonnée. Le cache est remis à la bonne position. Ce mécanisme conserve la distribution cible, en greedy comme en échantillonnage.
 
@@ -99,9 +99,11 @@ Avec un assistant entraîné, les deux modèles doivent utiliser **exactement le
 
 ## Résultats du mode automatique
 
-Sur les 42 essais MPS du 28 octobre 2026, l'automatique conserve les mêmes tokens que Baguette seul. Les gains médians des cas de copie et de répétition vont de **1,23 à 1,63× en échantillonnage**, et de **1,20 à 3,07× en greedy**. Sur les trois prompts libres courts, le repli reste proche de la référence avec environ 0 à 4 % de surcoût. Ces résultats portent sur ce petit jeu de textes, pas sur tous les prompts.
+Sur les **60 essais MPS** de la version adaptative, les sorties correspondent token par token à Baguette seul et à la version précédente. En greedy, la copie « bibliothèque » passe de 17 à **11 appels cible** pour 64 tokens : le débit progresse de **46 % par rapport à l'ancien moteur**, et atteint **4,43× celui de Baguette seul** sur ce cas.
 
-Le [rapport du mode automatique](bench_reports/lookup-mps-20261028.md) contient les cas sans gain, les résultats bruts, la vérification de l'interface et les commandes de reproduction.
+La détection des répétitions pendant la génération peut aussi aider après un prompt libre : l'explication de la pluie atteint **1,42× en greedy** avec un budget de 64 tokens et **1,50×** avec un budget de 128. Les répétitions et les erreurs produites restent celles du modèle.
+
+Les gains ne sont pas systématiques : les prompts libres en échantillonnage restent souvent proches de la référence ou plus lents. Le [rapport adaptatif](bench_reports/adaptive-lookup-mps-20261028.md) donne tous les cas, les données brutes et la commande de comparaison avec la version précédente. Le [premier rapport du mode automatique](bench_reports/lookup-mps-20261028.md) conserve les mesures historiques.
 
 ## Historique du brouillon nano
 

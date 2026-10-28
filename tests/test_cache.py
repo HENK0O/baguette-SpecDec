@@ -137,6 +137,21 @@ class CacheTests(unittest.TestCase):
                 self.assertEqual(actual.token_ids, expected.token_ids)
                 self.assertEqual(actual.draft_forward_passes, 0)
 
+    def test_lookup_adaptive_guard_with_real_cache(self):
+        model = deepcopy(self.model)
+        model.lm_head = torch.nn.Linear(32, 32, bias=True)
+        with torch.no_grad():
+            model.lm_head.weight.zero_()
+            model.lm_head.bias.fill_(-1000)
+            model.lm_head.bias[0] = 0
+        for greedy in (False, True):
+            settings = dict(max_new_tokens=9, greedy=greedy, seed=7)
+            expected = generate_cached(model, [0] * 7, **settings)
+            actual = generate_lookup(model, [0] * 7, draft_length=3, **settings)
+            self.assertEqual(actual.token_ids, expected.token_ids)
+            self.assertEqual(actual.adaptive_blocks, 1)
+            self.assertEqual(actual.target_forward_passes, 6)
+
     def test_cached_rejection_matches_reference(self):
         from model import ModelConfig, build_model
 

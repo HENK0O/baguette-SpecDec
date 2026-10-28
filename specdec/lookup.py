@@ -57,6 +57,8 @@ class LookupResult(SpeculativeResult):
     verification_blocks: int
     fallback_tokens: int
     cooldown_tokens: int
+    adaptive_blocks: int = 0
+    discovered_reuse: bool = False
 
 
 @torch.inference_mode()
@@ -73,11 +75,11 @@ def generate_lookup(
     seed: int = 0,
     eos_id: int | None = None,
 ) -> LookupResult:
-    """Use copied blocks after two target tokens agree; otherwise decode normally.
+    """Verify copied blocks with a guard adapted to recent complete matches.
 
-    Two tokens are sampled with ordinary target steps before verifying a block,
-    so weak matches do not trigger a large speculative forward. Unhelpful
-    verifications trigger a bounded cooldown using ordinary target decoding.
+    Start with two ordinary target tokens. After two full accepted blocks,
+    keep only the first-token guard, saving a model call per useful block.
+    Every proposed token is still checked against a target draw.
     """
     if not prompt_ids or max_new_tokens < 1 or draft_length < 1:
         raise ValueError("prompt, max_new_tokens and draft_length must be positive")
@@ -91,13 +93,14 @@ def generate_lookup(
     target_seconds = 0.0
     generated: list[int] = []
     proposed = accepted = attempts = verified = fallback = cooldown_tokens = 0
-    cooldown = poor_blocks = 0
+    cooldown = poor_blocks = successful_blocks = adaptive_blocks = 0
+    discovered_reuse = False
     first_token_at = 0.0
     synchronize(device)
     start = time.perf_counter()
     lookup = PromptLookup(prompt_ids)
-    # Short free-form prompts have no useful source to copy. Avoid speculative
-    # work for the entire request unless the prompt already offers a real block.
+    # Short prompts start on target alone. Probe again after 32 generated
+    # tokens, then every 16 tokens, so new repetitions can become useful.
     lookup_enabled = len(prompt_ids) >= 32 or len(lookup.propose(3)) >= 3
 
     def forward(tokens: list[int], position: int, last_only: bool) -> torch.Tensor:
@@ -128,6 +131,11 @@ def generate_lookup(
     while len(generated) < max_new_tokens:
         position = len(prompt_ids) + len(generated)
         remaining = max_new_tokens - len(generated)
+        if not lookup_enabled and len(generated) >= 32 and len(generated) % 16 == 0:
+            probe = PromptLookup(prompt_ids + generated)
+            if len(probe.propose(3)) >= 3:
+                lookup = probe
+                lookup_enabled = discovered_reuse = True
         candidates = ([] if cooldown or not lookup_enabled else
                       lookup.propose(min(draft_length, remaining)))
         if eos_id is not None and eos_id in candidates:
@@ -138,6 +146,7 @@ def generate_lookup(
             attempts += 1
             proposed += len(candidates)
         if not can_verify or token != candidates[0]:
+            successful_blocks = 0
             fallback += 1
             if cooldown:
                 cooldown_tokens += 1
@@ -152,29 +161,34 @@ def generate_lookup(
         if emit(token):
             fallback += 1
             break
-        # A second ordinary target step filters accidental one-token matches.
-        # Neither preflight step costs more model calls than baseline decoding.
-        next_logits = forward([token], position, True)[0, -1]
-        token = sample(next_logits)
-        second_matches = token == candidates[1]
-        if second_matches:
-            accepted += 1
-            accepted_in_block += 1
-        if emit(token):
-            fallback += 2
-            break
-        if not second_matches or len(candidates) == 2:
-            fallback += 2
-            next_logits = forward([token], position + 1, True)[0, -1]
-            continue
+        # A reliable run needs only the first-token guard. A mismatch restores
+        # the two-token guard immediately; neither mode skips target sampling.
+        guard = 1 if successful_blocks >= 2 and len(candidates) >= 3 else 2
+        if guard == 2:
+            next_logits = forward([token], position, True)[0, -1]
+            token = sample(next_logits)
+            second_matches = token == candidates[1]
+            if second_matches:
+                accepted += 1
+                accepted_in_block += 1
+            if emit(token):
+                fallback += 2
+                break
+            if not second_matches or len(candidates) == 2:
+                successful_blocks = 0
+                fallback += 2
+                next_logits = forward([token], position + 1, True)[0, -1]
+                continue
+        else:
+            adaptive_blocks += 1
         verified += 1
-        # The final candidate need not enter the cache if this block fills the
-        # entire remaining output budget; its probability comes from K-1.
-        verification_ids = candidates[1:-1] if len(candidates) == remaining else candidates[1:]
-        logits = forward(verification_ids, position + 1, False)[0]
+        # The final candidate need not enter the cache at the output boundary.
+        end = -1 if len(candidates) == remaining else len(candidates)
+        verification_ids = candidates[guard - 1:end]
+        logits = forward(verification_ids, position + guard - 1, False)[0]
         rejected = stopped = False
-        for i, candidate in enumerate(candidates[2:], start=2):
-            token = sample(logits[i - 2])
+        for i, candidate in enumerate(candidates[guard:], start=guard):
+            token = sample(logits[i - guard])
             matches = token == candidate
             if matches:
                 accepted += 1
@@ -186,6 +200,7 @@ def generate_lookup(
         if stopped:
             break
         if rejected:
+            successful_blocks = 0
             next_logits = forward([token], position + accepted_in_block, True)[0, -1]
             if accepted_in_block < max(3, len(candidates) // 2):
                 poor_blocks += 1
@@ -193,6 +208,7 @@ def generate_lookup(
             else:
                 poor_blocks = 0
         else:
+            successful_blocks += 1
             poor_blocks = 0
             next_logits = logits[-1]
 
@@ -204,5 +220,6 @@ def generate_lookup(
         blocks=attempts, target_forward_passes=target_passes,
         draft_forward_passes=0, target_seconds=target_seconds, draft_seconds=0.0,
         verification_blocks=verified, fallback_tokens=fallback,
-        cooldown_tokens=cooldown_tokens,
+        cooldown_tokens=cooldown_tokens, adaptive_blocks=adaptive_blocks,
+        discovered_reuse=discovered_reuse,
     )

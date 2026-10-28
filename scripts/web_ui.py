@@ -197,6 +197,8 @@ class ComparisonService:
                 "draft_forward_passes": speculative.draft_forward_passes,
                 "verification_blocks": getattr(speculative, "verification_blocks", speculative.blocks),
                 "fallback_tokens": getattr(speculative, "fallback_tokens", 0),
+                "adaptive_blocks": getattr(speculative, "adaptive_blocks", 0),
+                "discovered_reuse": getattr(speculative, "discovered_reuse", False),
                 "speedup": speculative.tokens_per_second / baseline.tokens_per_second,
             },
         }

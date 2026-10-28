@@ -65,6 +65,77 @@ class LookupTests(unittest.TestCase):
         self.assertEqual(result.draft_forward_passes, 0)
         self.assertEqual(result.target_forward_passes, 24)
 
+    def test_reliable_blocks_reduce_guard_cost(self):
+        model = TransitionModel()
+        prompt = [0, 1, 2] * 8
+        for budget in (17, 18, 19, 24, 25, 40):
+            with self.subTest(budget=budget):
+                result = self.run_lookup(model, prompt, max_new_tokens=budget,
+                                         draft_length=8, greedy=True)
+                expected = generate(model, prompt, max_new_tokens=budget, greedy=True)
+                self.assertEqual(result.token_ids, expected.token_ids)
+                if budget >= 19:
+                    self.assertGreater(result.adaptive_blocks, 0)
+                self.assertLessEqual(result.target_forward_passes, 3 + (budget + 7) // 8)
+
+    def test_new_output_can_enable_lookup_after_short_prompt(self):
+        model = TransitionModel()
+        result = self.run_lookup(model, [2], max_new_tokens=64, draft_length=8, greedy=True)
+        expected = generate(model, [2], max_new_tokens=64, greedy=True)
+        self.assertEqual(result.token_ids, expected.token_ids)
+        self.assertTrue(result.discovered_reuse)
+        self.assertGreater(result.adaptive_blocks, 0)
+        self.assertLess(result.target_forward_passes, 45)
+
+    def test_rejection_with_one_token_guard_rewinds_cache(self):
+        model = TransitionModel()
+        original = PromptLookup.propose
+        calls = []
+
+        def propose(index, count):
+            candidates = original(index, count)
+            calls.append(candidates[:])
+            # Initial probe, two successful blocks, then a second-token rejection.
+            if len(calls) == 4:
+                candidates[1] = (candidates[1] + 1) % 3
+            return candidates
+
+        with patch.object(PromptLookup, "propose", propose):
+            result = self.run_lookup(model, [0, 1, 2] * 8,
+                                     max_new_tokens=40, draft_length=8, greedy=True)
+        expected = generate(model, [0, 1, 2] * 8, max_new_tokens=40, greedy=True)
+        self.assertEqual(result.token_ids, expected.token_ids)
+        self.assertGreater(result.adaptive_blocks, 0)
+        self.assertGreater(result.cooldown_tokens, 0)
+
+    def test_adaptive_sampling_matches_reference(self):
+        # Nearly deterministic sampling reaches the reduced guard, while still
+        # using the stochastic code path and its exact sequence of RNG draws.
+        model = TransitionModel()
+        for seed in range(5):
+            settings = dict(max_new_tokens=40, seed=seed, temperature=0.5,
+                            top_k=3, top_p=0.95)
+            result = self.run_lookup(model, [0, 1, 2] * 8, **settings)
+            expected = generate(model, [0, 1, 2] * 8, **settings)
+            self.assertEqual(result.token_ids, expected.token_ids)
+            self.assertGreater(result.adaptive_blocks, 0)
+
+    def test_eos_inside_adaptive_block(self):
+        class EndingModel(TransitionModel):
+            def forward(self, ids):
+                logits, _, _ = super().forward(ids)
+                logits = torch.cat((logits, torch.full((*ids.shape, 1), -1000.0)), -1)
+                logits[:, 44:, 3] = 1000.0
+                return logits, None, {}
+
+        model = EndingModel()
+        settings = dict(max_new_tokens=40, greedy=True, eos_id=3)
+        expected = generate(model, [0, 1, 2] * 8, **settings)
+        actual = self.run_lookup(model, [0, 1, 2] * 8, **settings)
+        self.assertEqual(actual.token_ids, expected.token_ids)
+        self.assertEqual(actual.token_ids[-1], 3)
+        self.assertGreater(actual.adaptive_blocks, 0)
+
     def test_sampling_matches_baseline_through_acceptance_and_rejection(self):
         model = TransitionModel(soft=True)
         verified = 0

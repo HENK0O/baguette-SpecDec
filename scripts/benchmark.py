@@ -113,6 +113,8 @@ def main() -> None:
                           "lookup" if result.verification_blocks else "target"),
             "same_tokens": result.token_ids == baseline.token_ids,
             "verification_blocks": getattr(result, "verification_blocks", result.blocks),
+            "adaptive_blocks": getattr(result, "adaptive_blocks", 0),
+            "discovered_reuse": getattr(result, "discovered_reuse", False),
             "generated_tokens": len(result.token_ids),
             "tokens_per_second": result.tokens_per_second,
             "speedup": result.tokens_per_second / baseline.tokens_per_second,
