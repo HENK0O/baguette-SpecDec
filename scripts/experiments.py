@@ -13,8 +13,8 @@ from tokenizers import Tokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from specdec.experiments import run_trials  # noqa: E402
-from specdec.loader import assert_tokenizer_compatible, load_baguette  # noqa: E402
+from specdec.experiments import run_trials
+from specdec.loader import assert_tokenizer_compatible, load_baguette
 
 
 def main() -> None:
@@ -32,13 +32,27 @@ def main() -> None:
     args = parser.parse_args()
 
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    required = ("drafts", "prompts", "generation_lengths", "draft_lengths",
-                "temperatures", "top_ps", "top_ks", "seeds")
+    required = (
+        "drafts",
+        "prompts",
+        "generation_lengths",
+        "draft_lengths",
+        "temperatures",
+        "top_ps",
+        "top_ks",
+        "seeds",
+    )
     missing = [key for key in required if key not in config]
     if missing:
         parser.error("missing config keys: " + ", ".join(missing))
     if args.device == "auto":
-        name = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        name = (
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
     else:
         name = args.device
     device = torch.device(name)
@@ -58,17 +72,23 @@ def main() -> None:
         draft = load_baguette(args.baguette_source, checkpoint, device)
         if draft.cfg.vocab_size != target.cfg.vocab_size:
             raise ValueError(f"draft {checkpoint} vocabulary size differs from target")
-        rows.extend(run_trials(
-            target, draft, encoded,
-            draft_label=draft_spec.get("label", checkpoint.stem),
-            generation_lengths=config["generation_lengths"],
-            draft_lengths=config["draft_lengths"],
-            temperatures=config["temperatures"],
-            top_ps=config["top_ps"],
-            top_ks=config["top_ks"],
-            seeds=config["seeds"], cache=args.cache, greedy=args.greedy,
-            warmup_runs=args.warmup_runs,
-        ))
+        rows.extend(
+            run_trials(
+                target,
+                draft,
+                encoded,
+                draft_label=draft_spec.get("label", checkpoint.stem),
+                generation_lengths=config["generation_lengths"],
+                draft_lengths=config["draft_lengths"],
+                temperatures=config["temperatures"],
+                top_ps=config["top_ps"],
+                top_ks=config["top_ks"],
+                seeds=config["seeds"],
+                cache=args.cache,
+                greedy=args.greedy,
+                warmup_runs=args.warmup_runs,
+            )
+        )
         del draft
     if not rows:
         raise ValueError("experiment produced no rows; check the config grid")
@@ -80,8 +100,9 @@ def main() -> None:
         writer.writerows(rows)
     if args.output_json:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
-        args.output_json.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n",
-                                    encoding="utf-8")
+        args.output_json.write_text(
+            json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     print(f"Saved {len(rows)} measured trials to {args.output_csv}")
 
 

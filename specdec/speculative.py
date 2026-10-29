@@ -138,8 +138,7 @@ def generate_speculative(
         target_logits, _, _ = target(draft_sequence)
         p_vectors = [target_logits[0, prefix_length - 1 + i, :] for i in range(K + 1)]
         if not greedy:
-            p_vectors = [probabilities(logits, temperature, top_k, top_p)
-                         for logits in p_vectors]
+            p_vectors = [probabilities(logits, temperature, top_k, top_p) for logits in p_vectors]
         synchronize(target_device)
         target_seconds += clock() - t0
         target_passes += 1
@@ -152,8 +151,9 @@ def generate_speculative(
                 correction = int(torch.argmax(p).item())
                 accept = token == correction
             else:
-                accept = (float(torch.rand((), generator=generator, device=target_device).item())
-                          < acceptance_probability(p, q_vectors[i], token))
+                accept = float(
+                    torch.rand((), generator=generator, device=target_device).item()
+                ) < acceptance_probability(p, q_vectors[i], token)
             if accept:
                 accepted += 1
                 output_block.append(token)
@@ -161,9 +161,11 @@ def generate_speculative(
                     break
             else:
                 if not greedy:
-                    correction = int(torch.multinomial(
-                        residual_probabilities(p, q_vectors[i]), 1, generator=generator
-                    ).item())
+                    correction = int(
+                        torch.multinomial(
+                            residual_probabilities(p, q_vectors[i]), 1, generator=generator
+                        ).item()
+                    )
                 output_block.append(correction)
                 rejected = True
                 break
@@ -171,8 +173,11 @@ def generate_speculative(
         # When all proposals survive, draw one extra token from p_(K+1).
         if not rejected and len(output_block) == K and len(generated) + K < max_new_tokens:
             if eos_id is None or output_block[-1] != eos_id:
-                bonus = (int(torch.argmax(p_vectors[K]).item()) if greedy else
-                         int(torch.multinomial(p_vectors[K], 1, generator=generator).item()))
+                bonus = (
+                    int(torch.argmax(p_vectors[K]).item())
+                    if greedy
+                    else int(torch.multinomial(p_vectors[K], 1, generator=generator).item())
+                )
                 output_block.append(bonus)
 
         if not generated:
@@ -189,7 +194,15 @@ def generate_speculative(
     synchronize(target_device)
     elapsed = clock() - start
     return SpeculativeResult(
-        generated, elapsed, first_token_at, len(generated) / elapsed,
-        proposed, accepted, blocks, target_passes, draft_passes,
-        target_seconds, draft_seconds,
+        generated,
+        elapsed,
+        first_token_at,
+        len(generated) / elapsed,
+        proposed,
+        accepted,
+        blocks,
+        target_passes,
+        draft_passes,
+        target_seconds,
+        draft_seconds,
     )

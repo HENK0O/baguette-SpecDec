@@ -1,0 +1,43 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python style and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the Baguette architecture for cache tests
+        uses: actions/checkout@v4
+        with:
+          repository: HENK0O/baguette
+          ref: ba8f770f706b8f427bf7b10925d0dcfb137a7813
+          path: .baguette-source
+          sparse-checkout: model.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install CPU dependencies
+        run: |
+          python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-dev.txt
+      - name: Check Python style
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Run tests without checkpoints
+        env:
+          BAGUETTE_SOURCE: ${{ github.workspace }}/.baguette-source
+        run: python -m unittest discover -s tests -v

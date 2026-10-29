@@ -13,9 +13,9 @@ from tokenizers import Tokenizer
 # Allow `python scripts/baseline.py` from the repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from specdec.baseline import generate  # noqa: E402
-from specdec.cached_generation import generate_cached  # noqa: E402
-from specdec.loader import load_baguette  # noqa: E402
+from specdec.baseline import generate
+from specdec.cached_generation import generate_cached
+from specdec.loader import load_baguette
 
 
 def main() -> None:
@@ -35,7 +35,13 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.device == "auto":
-        device_name = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        device_name = (
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
     else:
         device_name = args.device
     device = torch.device(device_name)
@@ -47,21 +53,33 @@ def main() -> None:
     prompt_ids = tokenizer.encode(args.prompt).ids
     generate_fn = generate_cached if args.cache else generate
     result = generate_fn(
-        model, prompt_ids, max_new_tokens=args.max_new_tokens,
-        greedy=args.greedy, temperature=args.temperature, top_k=args.top_k,
-        top_p=args.top_p, seed=args.seed, eos_id=model.cfg.eos_id,
+        model,
+        prompt_ids,
+        max_new_tokens=args.max_new_tokens,
+        greedy=args.greedy,
+        temperature=args.temperature,
+        top_k=args.top_k,
+        top_p=args.top_p,
+        seed=args.seed,
+        eos_id=model.cfg.eos_id,
     )
-    print(json.dumps({
-        "prompt": args.prompt,
-        "generated_text": tokenizer.decode(result.token_ids, skip_special_tokens=False),
-        "generated_tokens": len(result.token_ids),
-        "total_seconds": result.total_seconds,
-        "time_to_first_token": result.time_to_first_token,
-        "tokens_per_second": result.tokens_per_second,
-        "device": device_name,
-        "seed": args.seed,
-        "cache": args.cache,
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "prompt": args.prompt,
+                "generated_text": tokenizer.decode(result.token_ids, skip_special_tokens=False),
+                "generated_tokens": len(result.token_ids),
+                "total_seconds": result.total_seconds,
+                "time_to_first_token": result.time_to_first_token,
+                "tokens_per_second": result.tokens_per_second,
+                "device": device_name,
+                "seed": args.seed,
+                "cache": args.cache,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -36,10 +36,16 @@ class WebUITests(unittest.TestCase):
         self.service = ComparisonService(target, draft, TinyTokenizer(), torch.device("cpu"))
 
     def test_greedy_comparison_corrects_draft(self):
-        result = self.service.compare({
-            "prompt": "Bonjour", "mode": "greedy", "max_new_tokens": 3,
-            "draft_length": 2, "cache": False, "strategy": "draft",
-        })
+        result = self.service.compare(
+            {
+                "prompt": "Bonjour",
+                "mode": "greedy",
+                "max_new_tokens": 3,
+                "draft_length": 2,
+                "cache": False,
+                "strategy": "draft",
+            }
+        )
         self.assertEqual(result["baseline"]["text"], result["speculative"]["text"])
         self.assertEqual(result["speculative"]["acceptance_rate"], 0)
         self.assertEqual(result["baseline"]["generated_tokens"], 3)
@@ -49,13 +55,30 @@ class WebUITests(unittest.TestCase):
         target = StaticModel([0.1, 0.8, 0.1])
         target.layers = [SimpleNamespace(kind="attn")]
         loader = Mock(side_effect=AssertionError("auto must not load a draft"))
-        service = ComparisonService(target, None, TinyTokenizer(), torch.device("cpu"),
-                                    draft_loader=loader)
+        service = ComparisonService(
+            target, None, TinyTokenizer(), torch.device("cpu"), draft_loader=loader
+        )
         baseline = GenerationResult([1, 1, 1], 0.1, 0.01, 30)
-        lookup = LookupResult([1, 1, 1], 0.1, 0.01, 30, 0, 0, 0, 3, 0, 0.1, 0,
-                              verification_blocks=0, fallback_tokens=3, cooldown_tokens=0)
-        with patch("scripts.web_ui.generate_cached", return_value=baseline), \
-             patch("scripts.web_ui.generate_lookup", return_value=lookup):
+        lookup = LookupResult(
+            [1, 1, 1],
+            0.1,
+            0.01,
+            30,
+            0,
+            0,
+            0,
+            3,
+            0,
+            0.1,
+            0,
+            verification_blocks=0,
+            fallback_tokens=3,
+            cooldown_tokens=0,
+        )
+        with (
+            patch("scripts.web_ui.generate_cached", return_value=baseline),
+            patch("scripts.web_ui.generate_lookup", return_value=lookup),
+        ):
             result = service.compare({"prompt": "Bonjour", "max_new_tokens": 3})
         loader.assert_not_called()
         self.assertEqual(result["execution"], "target")
@@ -64,12 +87,20 @@ class WebUITests(unittest.TestCase):
 
     def test_draft_is_loaded_only_when_selected(self):
         loader = Mock(return_value=self.service.draft)
-        service = ComparisonService(self.service.target, None, TinyTokenizer(),
-                                    torch.device("cpu"), draft_loader=loader)
+        service = ComparisonService(
+            self.service.target, None, TinyTokenizer(), torch.device("cpu"), draft_loader=loader
+        )
         self.assertTrue(service.info()["draft_available"])
         self.assertIsNone(service.info()["draft_parameters"])
-        service.compare({"prompt": "Bonjour", "strategy": "draft", "cache": False,
-                         "max_new_tokens": 3, "mode": "greedy"})
+        service.compare(
+            {
+                "prompt": "Bonjour",
+                "strategy": "draft",
+                "cache": False,
+                "max_new_tokens": 3,
+                "mode": "greedy",
+            }
+        )
         loader.assert_called_once()
 
     def test_rejects_invalid_input(self):

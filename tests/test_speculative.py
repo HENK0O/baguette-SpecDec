@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import torch
 
-from specdec.loader import assert_tokenizer_compatible
 from specdec.baseline import generate
+from specdec.loader import assert_tokenizer_compatible
 from specdec.speculative import (
     acceptance_probability,
     generate_speculative,
@@ -53,8 +53,9 @@ class SpeculativeTests(unittest.TestCase):
         target, draft = StaticModel(p), StaticModel([0.65, 0.25, 0.10])
         counts = [0, 0, 0]
         for seed in range(1200):
-            result = generate_speculative(target, draft, [0], max_new_tokens=1,
-                                          draft_length=1, seed=seed)
+            result = generate_speculative(
+                target, draft, [0], max_new_tokens=1, draft_length=1, seed=seed
+            )
             counts[result.token_ids[0]] += 1
         frequencies = [count / 1200 for count in counts]
         for observed, expected in zip(frequencies, p):
@@ -62,8 +63,7 @@ class SpeculativeTests(unittest.TestCase):
 
     def test_batched_verification_and_bonus_alignment(self):
         model = TransitionModel()
-        result = generate_speculative(model, model, [0], max_new_tokens=5,
-                                      draft_length=2, seed=12)
+        result = generate_speculative(model, model, [0], max_new_tokens=5, draft_length=2, seed=12)
         self.assertEqual(result.token_ids, [1, 2, 0, 1, 2])
         self.assertEqual(result.target_forward_passes, 2)
         self.assertEqual(result.accepted, 4)
@@ -71,16 +71,18 @@ class SpeculativeTests(unittest.TestCase):
 
     def test_greedy_matches_target_on_acceptance_and_rejection(self):
         target = TransitionModel()
-        accepted = generate_speculative(target, target, [0], max_new_tokens=5,
-                                        draft_length=2, greedy=True)
+        accepted = generate_speculative(
+            target, target, [0], max_new_tokens=5, draft_length=2, greedy=True
+        )
         baseline = generate(target, [0], max_new_tokens=5, greedy=True)
         self.assertEqual(accepted.token_ids, baseline.token_ids)
         self.assertEqual(accepted.accepted, accepted.proposed)
 
         target = StaticModel([0.1, 0.8, 0.1])
         draft = StaticModel([0.8, 0.1, 0.1])
-        rejected = generate_speculative(target, draft, [0], max_new_tokens=5,
-                                        draft_length=2, greedy=True)
+        rejected = generate_speculative(
+            target, draft, [0], max_new_tokens=5, draft_length=2, greedy=True
+        )
         baseline = generate(target, [0], max_new_tokens=5, greedy=True)
         self.assertEqual(rejected.token_ids, baseline.token_ids)
         self.assertEqual(rejected.accepted, 0)
@@ -88,17 +90,24 @@ class SpeculativeTests(unittest.TestCase):
     def test_greedy_stops_at_eos(self):
         target = StaticModel([0.1, 0.8, 0.1])
         draft = StaticModel([0.8, 0.1, 0.1])
-        result = generate_speculative(target, draft, [0], max_new_tokens=5,
-                                      draft_length=2, greedy=True, eos_id=1)
+        result = generate_speculative(
+            target, draft, [0], max_new_tokens=5, draft_length=2, greedy=True, eos_id=1
+        )
         self.assertEqual(result.token_ids, [1])
 
     def test_vocab_and_context_checks(self):
         with self.assertRaisesRegex(ValueError, "vocab sizes"):
-            generate_speculative(StaticModel([0.5, 0.5]), StaticModel([1.0]),
-                                 [0], max_new_tokens=1, draft_length=1)
+            generate_speculative(
+                StaticModel([0.5, 0.5]), StaticModel([1.0]), [0], max_new_tokens=1, draft_length=1
+            )
         with self.assertRaisesRegex(ValueError, "shared context"):
-            generate_speculative(StaticModel([0.5, 0.5]), StaticModel([0.5, 0.5]),
-                                 [0] * 32, max_new_tokens=1, draft_length=1)
+            generate_speculative(
+                StaticModel([0.5, 0.5]),
+                StaticModel([0.5, 0.5]),
+                [0] * 32,
+                max_new_tokens=1,
+                draft_length=1,
+            )
 
     def test_tokenizer_hash_check(self):
         with tempfile.TemporaryDirectory() as directory:

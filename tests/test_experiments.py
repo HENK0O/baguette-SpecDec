@@ -20,9 +20,16 @@ class ExperimentTests(unittest.TestCase):
     def test_grid_produces_raw_rows(self):
         model = TinyModel()
         rows = run_trials(
-            model, model, [("A", [0]), ("B", [1])], draft_label="tiny",
-            generation_lengths=[2], draft_lengths=[1, 2],
-            temperatures=[0.5], top_ps=[1.0], top_ks=[0], seeds=[1, 2],
+            model,
+            model,
+            [("A", [0]), ("B", [1])],
+            draft_label="tiny",
+            generation_lengths=[2],
+            draft_lengths=[1, 2],
+            temperatures=[0.5],
+            top_ps=[1.0],
+            top_ks=[0],
+            seeds=[1, 2],
             cache=False,
         )
         self.assertEqual(len(rows), 8)
@@ -33,10 +40,18 @@ class ExperimentTests(unittest.TestCase):
     def test_greedy_grid_matches_baseline(self):
         model = TinyModel()
         rows = run_trials(
-            model, model, [("A", [0])], draft_label="tiny",
-            generation_lengths=[3], draft_lengths=[2],
-            temperatures=[1.0], top_ps=[1.0], top_ks=[0], seeds=[1],
-            cache=False, greedy=True,
+            model,
+            model,
+            [("A", [0])],
+            draft_label="tiny",
+            generation_lengths=[3],
+            draft_lengths=[2],
+            temperatures=[1.0],
+            top_ps=[1.0],
+            top_ks=[0],
+            seeds=[1],
+            cache=False,
+            greedy=True,
         )
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0]["greedy"])

@@ -45,8 +45,14 @@ def generate_cached(
     first_token_at = 0.0
 
     for step in range(max_new_tokens):
-        token = sample_token(logits, greedy=greedy, temperature=temperature,
-                             top_k=top_k, top_p=top_p, generator=generator)
+        token = sample_token(
+            logits,
+            greedy=greedy,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            generator=generator,
+        )
         synchronize(device)
         if not generated:
             first_token_at = time.perf_counter() - start
@@ -155,8 +161,7 @@ def generate_speculative_cached(
             verification_pos = position - 1
         proposal_tensor = torch.tensor([verification_ids], dtype=torch.long, device=device)
         t0 = time.perf_counter()
-        verification_logits = forward_all(target, proposal_tensor, target_caches,
-                                          verification_pos)
+        verification_logits = forward_all(target, proposal_tensor, target_caches, verification_pos)
         if pending_target_token is None:
             p_vectors = [target_next]
             p_vectors += [verification_logits[0, i, :] for i in range(K)]
@@ -171,14 +176,14 @@ def generate_speculative_cached(
         rejected = False
         for i, token in enumerate(proposals):
             # Later distributions are unused as soon as a proposal is rejected.
-            p = (p_vectors[i] if greedy else
-                 probabilities(p_vectors[i], temperature, top_k, top_p))
+            p = p_vectors[i] if greedy else probabilities(p_vectors[i], temperature, top_k, top_p)
             if greedy:
                 correction = int(torch.argmax(p).item())
                 accept = token == correction
             else:
-                accept = (float(torch.rand((), generator=generator, device=device).item())
-                          < acceptance_probability(p, q_vectors[i], token))
+                accept = float(
+                    torch.rand((), generator=generator, device=device).item()
+                ) < acceptance_probability(p, q_vectors[i], token)
             if accept:
                 accepted += 1
                 accepted_this_block += 1
@@ -187,18 +192,25 @@ def generate_speculative_cached(
                     break
             else:
                 if not greedy:
-                    correction = int(torch.multinomial(
-                        residual_probabilities(p, q_vectors[i]), 1, generator=generator
-                    ).item())
+                    correction = int(
+                        torch.multinomial(
+                            residual_probabilities(p, q_vectors[i]), 1, generator=generator
+                        ).item()
+                    )
                 output_block.append(correction)
                 rejected = True
                 break
 
         if not rejected and len(output_block) == K and len(generated) + K < max_new_tokens:
             if eos_id is None or output_block[-1] != eos_id:
-                bonus = sample_token(p_vectors[K], greedy=greedy,
-                                     temperature=temperature, top_k=top_k, top_p=top_p,
-                                     generator=generator)
+                bonus = sample_token(
+                    p_vectors[K],
+                    greedy=greedy,
+                    temperature=temperature,
+                    top_k=top_k,
+                    top_p=top_p,
+                    generator=generator,
+                )
                 output_block.append(bonus)
 
         if not generated:
@@ -226,8 +238,9 @@ def generate_speculative_cached(
             next_position = position + K - 1
         catchup_tensor = torch.tensor([catchup_ids], dtype=torch.long, device=device)
         t0 = time.perf_counter()
-        draft_next = forward_all(draft, catchup_tensor, draft_caches, next_position,
-                                 last_only=True)[0, -1, :]
+        draft_next = forward_all(
+            draft, catchup_tensor, draft_caches, next_position, last_only=True
+        )[0, -1, :]
         synchronize(device)
         draft_seconds += time.perf_counter() - t0
         draft_passes += 1
@@ -235,7 +248,15 @@ def generate_speculative_cached(
     synchronize(device)
     elapsed = time.perf_counter() - start
     return SpeculativeResult(
-        generated, elapsed, first_token_at, len(generated) / elapsed,
-        proposed, accepted, blocks, target_passes, draft_passes,
-        target_seconds, draft_seconds,
+        generated,
+        elapsed,
+        first_token_at,
+        len(generated) / elapsed,
+        proposed,
+        accepted,
+        blocks,
+        target_passes,
+        draft_passes,
+        target_seconds,
+        draft_seconds,
     )

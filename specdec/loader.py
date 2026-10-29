@@ -32,6 +32,7 @@ def load_baguette(source: Path, checkpoint: Path, device: torch.device):
 
 def assert_tokenizer_compatible(target_path: Path, draft_path: Path) -> None:
     """Require identical serialized tokenizers, not merely equal vocab size."""
+
     def digest(path: Path) -> bytes:
         return hashlib.sha256(path.read_bytes()).digest()
 

@@ -37,7 +37,7 @@ class PromptLookup:
         next_position = len(self.tokens)
         self.tokens.append(token)
         for n in range(self.min_match, min(self.max_match, next_position) + 1):
-            key = tuple(self.tokens[next_position - n:next_position])
+            key = tuple(self.tokens[next_position - n : next_position])
             self.positions.setdefault(key, []).append(next_position)
 
     def propose(self, count: int) -> list[int]:
@@ -48,7 +48,7 @@ class PromptLookup:
                 # The latest occurrence alone often has only one token after it.
                 index = bisect_right(positions, len(self.tokens) - count)
                 position = positions[max(0, index - 1)]
-                return self.tokens[position:position + count]
+                return self.tokens[position : position + count]
         return []
 
 
@@ -114,8 +114,14 @@ def generate_lookup(
         return logits
 
     def sample(logits: torch.Tensor) -> int:
-        return sample_token(logits, greedy=greedy, temperature=temperature,
-                            top_k=top_k, top_p=top_p, generator=generator)
+        return sample_token(
+            logits,
+            greedy=greedy,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            generator=generator,
+        )
 
     def emit(token: int) -> bool:
         nonlocal first_token_at
@@ -136,10 +142,11 @@ def generate_lookup(
             if len(probe.propose(3)) >= 3:
                 lookup = probe
                 lookup_enabled = discovered_reuse = True
-        candidates = ([] if cooldown or not lookup_enabled else
-                      lookup.propose(min(draft_length, remaining)))
+        candidates = (
+            [] if cooldown or not lookup_enabled else lookup.propose(min(draft_length, remaining))
+        )
         if eos_id is not None and eos_id in candidates:
-            candidates = candidates[:candidates.index(eos_id) + 1]
+            candidates = candidates[: candidates.index(eos_id) + 1]
         token = sample(next_logits)
         can_verify = len(candidates) >= 2
         if can_verify:
@@ -184,7 +191,7 @@ def generate_lookup(
         verified += 1
         # The final candidate need not enter the cache at the output boundary.
         end = -1 if len(candidates) == remaining else len(candidates)
-        verification_ids = candidates[guard - 1:end]
+        verification_ids = candidates[guard - 1 : end]
         logits = forward(verification_ids, position + guard - 1, False)[0]
         rejected = stopped = False
         for i, candidate in enumerate(candidates[guard:], start=guard):
@@ -215,11 +222,20 @@ def generate_lookup(
     synchronize(device)
     elapsed = time.perf_counter() - start
     return LookupResult(
-        token_ids=generated, total_seconds=elapsed, time_to_first_token=first_token_at,
-        tokens_per_second=len(generated) / elapsed, proposed=proposed, accepted=accepted,
-        blocks=attempts, target_forward_passes=target_passes,
-        draft_forward_passes=0, target_seconds=target_seconds, draft_seconds=0.0,
-        verification_blocks=verified, fallback_tokens=fallback,
-        cooldown_tokens=cooldown_tokens, adaptive_blocks=adaptive_blocks,
+        token_ids=generated,
+        total_seconds=elapsed,
+        time_to_first_token=first_token_at,
+        tokens_per_second=len(generated) / elapsed,
+        proposed=proposed,
+        accepted=accepted,
+        blocks=attempts,
+        target_forward_passes=target_passes,
+        draft_forward_passes=0,
+        target_seconds=target_seconds,
+        draft_seconds=0.0,
+        verification_blocks=verified,
+        fallback_tokens=fallback,
+        cooldown_tokens=cooldown_tokens,
+        adaptive_blocks=adaptive_blocks,
         discovered_reuse=discovered_reuse,
     )

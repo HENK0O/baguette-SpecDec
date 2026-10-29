@@ -28,13 +28,17 @@ def fake_forward(model, ids, cache, pos, *, last_only=False):
     assert pos + ids.shape[1] <= cache["capacity"]
     cache["tokens"][pos:] = ids[0].tolist()
     logits, _, _ = model(torch.tensor([cache["tokens"]]))
-    return logits[:, -1:] if last_only else logits[:, -ids.shape[1]:]
+    return logits[:, -1:] if last_only else logits[:, -ids.shape[1] :]
 
 
 class LookupTests(unittest.TestCase):
     def run_lookup(self, model, prompt, **settings):
-        with patch("specdec.lookup.allocate", side_effect=lambda m, n: {"tokens": [], "capacity": n}), \
-             patch("specdec.lookup.forward_all", side_effect=fake_forward):
+        with (
+            patch(
+                "specdec.lookup.allocate", side_effect=lambda m, n: {"tokens": [], "capacity": n}
+            ),
+            patch("specdec.lookup.forward_all", side_effect=fake_forward),
+        ):
             return generate_lookup(model, prompt, **settings)
 
     def test_index_has_real_continuations_and_prefers_complete_blocks(self):
@@ -49,8 +53,7 @@ class LookupTests(unittest.TestCase):
     def test_reuse_saves_target_passes(self):
         model = TransitionModel()
         prompt = [0, 1, 2] * 8
-        result = self.run_lookup(model, prompt, max_new_tokens=24,
-                                 draft_length=8, greedy=True)
+        result = self.run_lookup(model, prompt, max_new_tokens=24, draft_length=8, greedy=True)
         expected = generate(model, prompt, max_new_tokens=24, greedy=True)
         self.assertEqual(result.token_ids, expected.token_ids)
         self.assertLessEqual(result.target_forward_passes, 8)
@@ -70,8 +73,9 @@ class LookupTests(unittest.TestCase):
         prompt = [0, 1, 2] * 8
         for budget in (17, 18, 19, 24, 25, 40):
             with self.subTest(budget=budget):
-                result = self.run_lookup(model, prompt, max_new_tokens=budget,
-                                         draft_length=8, greedy=True)
+                result = self.run_lookup(
+                    model, prompt, max_new_tokens=budget, draft_length=8, greedy=True
+                )
                 expected = generate(model, prompt, max_new_tokens=budget, greedy=True)
                 self.assertEqual(result.token_ids, expected.token_ids)
                 if budget >= 19:
@@ -101,8 +105,9 @@ class LookupTests(unittest.TestCase):
             return candidates
 
         with patch.object(PromptLookup, "propose", propose):
-            result = self.run_lookup(model, [0, 1, 2] * 8,
-                                     max_new_tokens=40, draft_length=8, greedy=True)
+            result = self.run_lookup(
+                model, [0, 1, 2] * 8, max_new_tokens=40, draft_length=8, greedy=True
+            )
         expected = generate(model, [0, 1, 2] * 8, max_new_tokens=40, greedy=True)
         self.assertEqual(result.token_ids, expected.token_ids)
         self.assertGreater(result.adaptive_blocks, 0)
@@ -113,8 +118,7 @@ class LookupTests(unittest.TestCase):
         # using the stochastic code path and its exact sequence of RNG draws.
         model = TransitionModel()
         for seed in range(5):
-            settings = dict(max_new_tokens=40, seed=seed, temperature=0.5,
-                            top_k=3, top_p=0.95)
+            settings = dict(max_new_tokens=40, seed=seed, temperature=0.5, top_k=3, top_p=0.95)
             result = self.run_lookup(model, [0, 1, 2] * 8, **settings)
             expected = generate(model, [0, 1, 2] * 8, **settings)
             self.assertEqual(result.token_ids, expected.token_ids)
@@ -143,8 +147,9 @@ class LookupTests(unittest.TestCase):
             for k in (1, 2, 8):
                 for seed in range(8):
                     with self.subTest(prompt=prompt, k=k, seed=seed):
-                        settings = dict(max_new_tokens=16, seed=seed, temperature=0.8,
-                                        top_k=3, top_p=0.95)
+                        settings = dict(
+                            max_new_tokens=16, seed=seed, temperature=0.8, top_k=3, top_p=0.95
+                        )
                         result = self.run_lookup(model, prompt, draft_length=k, **settings)
                         expected = generate(model, prompt, **settings)
                         self.assertEqual(result.token_ids, expected.token_ids)
@@ -156,7 +161,9 @@ class LookupTests(unittest.TestCase):
         model = TransitionModel()
         with patch.object(PromptLookup, "propose", return_value=[0, 1, 0, 0, 0, 0, 0, 0]):
             result = self.run_lookup(model, [2], max_new_tokens=24, greedy=True)
-        self.assertEqual(result.token_ids, generate(model, [2], max_new_tokens=24, greedy=True).token_ids)
+        self.assertEqual(
+            result.token_ids, generate(model, [2], max_new_tokens=24, greedy=True).token_ids
+        )
         self.assertGreater(result.cooldown_tokens, 0)
 
     def test_eos_and_exact_budget(self):

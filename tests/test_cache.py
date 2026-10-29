@@ -6,11 +6,11 @@ from pathlib import Path
 
 import torch
 
-from specdec.cache import allocate, forward_all
 from specdec.baseline import generate
+from specdec.cache import allocate, forward_all
 from specdec.cached_generation import generate_cached, generate_speculative_cached
-from specdec.speculative import generate_speculative
 from specdec.lookup import generate_lookup
+from specdec.speculative import generate_speculative
 
 
 class CacheTests(unittest.TestCase):
@@ -23,11 +23,19 @@ class CacheTests(unittest.TestCase):
         from model import ModelConfig, build_model
 
         torch.manual_seed(3)
-        cls.model = build_model(ModelConfig(
-            vocab_size=32, n_layer=2, n_head=2, n_kv_head=1,
-            d_model=32, head_dim=16, d_ff=64, max_seq_len=16,
-            hybrid=False,
-        )).eval()
+        cls.model = build_model(
+            ModelConfig(
+                vocab_size=32,
+                n_layer=2,
+                n_head=2,
+                n_kv_head=1,
+                d_model=32,
+                head_dim=16,
+                d_ff=64,
+                max_seq_len=16,
+                hybrid=False,
+            )
+        ).eval()
 
     def test_prefill_and_block_match_full_forward(self):
         tokens = torch.tensor([[1, 2, 3, 4, 5, 6]])
@@ -69,8 +77,14 @@ class CacheTests(unittest.TestCase):
         for k in (1, 2, 4):
             for seed in range(8):
                 with self.subTest(k=k, seed=seed):
-                    options = dict(max_new_tokens=10, draft_length=k, seed=seed,
-                                   temperature=0.8, top_k=16, top_p=0.95)
+                    options = dict(
+                        max_new_tokens=10,
+                        draft_length=k,
+                        seed=seed,
+                        temperature=0.8,
+                        top_k=16,
+                        top_p=0.95,
+                    )
                     reference = generate_speculative(self.model, draft, [1, 2], **options)
                     cached = generate_speculative_cached(self.model, draft, [1, 2], **options)
                     self.assertEqual(cached.token_ids, reference.token_ids)
@@ -86,11 +100,17 @@ class CacheTests(unittest.TestCase):
         for eos in (None, baseline.token_ids[0], baseline.token_ids[2]):
             for k in (1, 2, 8):
                 with self.subTest(eos=eos, k=k):
-                    expected = generate_cached(self.model, prompt, max_new_tokens=6,
-                                               greedy=True, eos_id=eos)
+                    expected = generate_cached(
+                        self.model, prompt, max_new_tokens=6, greedy=True, eos_id=eos
+                    )
                     result = generate_speculative_cached(
-                        self.model, self.model, prompt, max_new_tokens=6,
-                        draft_length=k, greedy=True, eos_id=eos,
+                        self.model,
+                        self.model,
+                        prompt,
+                        max_new_tokens=6,
+                        draft_length=k,
+                        greedy=True,
+                        eos_id=eos,
                     )
                     self.assertEqual(result.token_ids, expected.token_ids)
                     self.assertEqual(result.draft_forward_passes, result.proposed)
@@ -104,11 +124,9 @@ class CacheTests(unittest.TestCase):
             draft.lm_head.weight.zero_()
             draft.lm_head.bias.fill_(-1000)
             draft.lm_head.bias[eos] = 0
-        expected = generate_cached(self.model, [1, 2], max_new_tokens=6,
-                                   greedy=True, eos_id=eos)
+        expected = generate_cached(self.model, [1, 2], max_new_tokens=6, greedy=True, eos_id=eos)
         for greedy in (False, True):
-            options = dict(max_new_tokens=6, draft_length=4, greedy=greedy,
-                           top_k=1, eos_id=eos)
+            options = dict(max_new_tokens=6, draft_length=4, greedy=greedy, top_k=1, eos_id=eos)
             actual = generate_speculative_cached(self.model, draft, [1, 2], **options)
             reference = generate_speculative(self.model, draft, [1, 2], **options)
             self.assertEqual(actual.token_ids, expected.token_ids)
@@ -120,18 +138,21 @@ class CacheTests(unittest.TestCase):
         reference = generate(self.model, prompt, max_new_tokens=5, seed=7)
         cached = generate_cached(self.model, prompt, max_new_tokens=5, seed=7)
         self.assertEqual(cached.token_ids, reference.token_ids)
-        reference_spec = generate_speculative(self.model, self.model, prompt,
-                                              max_new_tokens=5, draft_length=2, seed=7)
-        cached_spec = generate_speculative_cached(self.model, self.model, prompt,
-                                                 max_new_tokens=5, draft_length=2, seed=7)
+        reference_spec = generate_speculative(
+            self.model, self.model, prompt, max_new_tokens=5, draft_length=2, seed=7
+        )
+        cached_spec = generate_speculative_cached(
+            self.model, self.model, prompt, max_new_tokens=5, draft_length=2, seed=7
+        )
         self.assertEqual(cached_spec.token_ids, reference_spec.token_ids)
         self.assertEqual(cached_spec.target_forward_passes, cached_spec.blocks + 1)
 
     def test_lookup_matches_cached_target(self):
         for greedy in (False, True):
             for k in (1, 2, 8):
-                settings = dict(max_new_tokens=6, greedy=greedy, seed=3,
-                                temperature=0.8, top_k=16, top_p=0.95)
+                settings = dict(
+                    max_new_tokens=6, greedy=greedy, seed=3, temperature=0.8, top_k=16, top_p=0.95
+                )
                 expected = generate_cached(self.model, [1, 2] * 5, **settings)
                 actual = generate_lookup(self.model, [1, 2] * 5, draft_length=k, **settings)
                 self.assertEqual(actual.token_ids, expected.token_ids)
@@ -156,11 +177,19 @@ class CacheTests(unittest.TestCase):
         from model import ModelConfig, build_model
 
         torch.manual_seed(19)
-        draft = build_model(ModelConfig(
-            vocab_size=32, n_layer=2, n_head=2, n_kv_head=1,
-            d_model=32, head_dim=16, d_ff=64, max_seq_len=16,
-            hybrid=False,
-        )).eval()
+        draft = build_model(
+            ModelConfig(
+                vocab_size=32,
+                n_layer=2,
+                n_head=2,
+                n_kv_head=1,
+                d_model=32,
+                head_dim=16,
+                d_ff=64,
+                max_seq_len=16,
+                hybrid=False,
+            )
+        ).eval()
         draft.lm_head.weight = torch.nn.Parameter(-self.model.lm_head.weight.detach().clone())
         options = dict(max_new_tokens=6, draft_length=2, top_k=1, seed=4)
         reference = generate_speculative(self.model, draft, [1, 2], **options)
@@ -173,19 +202,31 @@ class CacheTests(unittest.TestCase):
         from model import ModelConfig, build_model
 
         accepted = generate_speculative_cached(
-            self.model, self.model, [1, 2], max_new_tokens=6,
-            draft_length=2, greedy=True,
+            self.model,
+            self.model,
+            [1, 2],
+            max_new_tokens=6,
+            draft_length=2,
+            greedy=True,
         )
         baseline = generate_cached(self.model, [1, 2], max_new_tokens=6, greedy=True)
         self.assertEqual(accepted.token_ids, baseline.token_ids)
         self.assertEqual(accepted.accepted, accepted.proposed)
 
         torch.manual_seed(19)
-        draft = build_model(ModelConfig(
-            vocab_size=32, n_layer=2, n_head=2, n_kv_head=1,
-            d_model=32, head_dim=16, d_ff=64, max_seq_len=16,
-            hybrid=False,
-        )).eval()
+        draft = build_model(
+            ModelConfig(
+                vocab_size=32,
+                n_layer=2,
+                n_head=2,
+                n_kv_head=1,
+                d_model=32,
+                head_dim=16,
+                d_ff=64,
+                max_seq_len=16,
+                hybrid=False,
+            )
+        ).eval()
         draft.lm_head.weight = torch.nn.Parameter(-self.model.lm_head.weight.detach().clone())
         options = dict(max_new_tokens=6, draft_length=2, greedy=True)
         reference = generate_speculative(self.model, draft, [1, 2], **options)

@@ -7,3 +7,9 @@ __pycache__/
 *.jsonl
 results/
 .DS_Store
+
+# Local development
+.ruff_cache/
+.baguette-source/
+.coverage
+htmlcov/

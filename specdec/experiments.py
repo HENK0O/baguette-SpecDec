@@ -28,8 +28,9 @@ def run_trials(
     warmup_runs: int = 1,
 ) -> list[dict]:
     """Measure baseline once and each K once for every other combination."""
-    if not all((encoded_prompts, generation_lengths, draft_lengths,
-                temperatures, top_ps, top_ks, seeds)):
+    if not all(
+        (encoded_prompts, generation_lengths, draft_lengths, temperatures, top_ps, top_ks, seeds)
+    ):
         raise ValueError("all experiment grid lists must be nonempty")
     if any(n < 1 for n in generation_lengths + draft_lengths):
         raise ValueError("generation and draft lengths must be positive")
@@ -40,10 +41,15 @@ def run_trials(
     target_params = sum(p.numel() for p in target.parameters())
     draft_params = sum(p.numel() for p in draft.parameters())
     warmup_prompt = encoded_prompts[0][1]
-    warmup_settings = dict(max_new_tokens=min(4, generation_lengths[0]),
-                           greedy=greedy,
-                           temperature=temperatures[0], top_p=top_ps[0],
-                           top_k=top_ks[0], seed=seeds[0], eos_id=target.cfg.eos_id)
+    warmup_settings = dict(
+        max_new_tokens=min(4, generation_lengths[0]),
+        greedy=greedy,
+        temperature=temperatures[0],
+        top_p=top_ps[0],
+        top_k=top_ks[0],
+        seed=seeds[0],
+        eos_id=target.cfg.eos_id,
+    )
     for _ in range(warmup_runs):
         baseline_fn(target, warmup_prompt, **warmup_settings)
         for K in draft_lengths:
@@ -52,42 +58,52 @@ def run_trials(
     for (prompt, ids), n, temperature, top_p, top_k, seed in product(
         encoded_prompts, generation_lengths, temperatures, top_ps, top_ks, seeds
     ):
-        settings = dict(max_new_tokens=n, greedy=greedy,
-                        temperature=temperature, top_p=top_p,
-                        top_k=top_k, seed=seed, eos_id=target.cfg.eos_id)
+        settings = dict(
+            max_new_tokens=n,
+            greedy=greedy,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            seed=seed,
+            eos_id=target.cfg.eos_id,
+        )
         baseline = baseline_fn(target, ids, **settings)
         for K in draft_lengths:
             result = spec_fn(target, draft, ids, draft_length=K, **settings)
             if greedy and result.token_ids != baseline.token_ids:
-                raise RuntimeError(f"greedy speculative output differs from target baseline for K={K}")
-            rows.append({
-                "draft_label": draft_label,
-                "target_parameters": target_params,
-                "draft_parameters": draft_params,
-                "cache": cache,
-                "greedy": greedy,
-                "warmup_runs": warmup_runs,
-                "prompt": prompt,
-                "prompt_tokens": len(ids),
-                "max_new_tokens": n,
-                "temperature": temperature,
-                "top_p": top_p,
-                "top_k": top_k,
-                "seed": seed,
-                "draft_length": K,
-                "baseline_generated_tokens": len(baseline.token_ids),
-                "baseline_tokens_per_second": baseline.tokens_per_second,
-                "baseline_time_to_first_token": baseline.time_to_first_token,
-                "spec_generated_tokens": len(result.token_ids),
-                "spec_tokens_per_second": result.tokens_per_second,
-                "spec_time_to_first_token": result.time_to_first_token,
-                "speedup": result.tokens_per_second / baseline.tokens_per_second,
-                "acceptance_rate": result.acceptance_rate,
-                "accepted_per_block": result.accepted_per_block,
-                "blocks": result.blocks,
-                "target_forward_passes": result.target_forward_passes,
-                "draft_forward_passes": result.draft_forward_passes,
-                "target_seconds": result.target_seconds,
-                "draft_seconds": result.draft_seconds,
-            })
+                raise RuntimeError(
+                    f"greedy speculative output differs from target baseline for K={K}"
+                )
+            rows.append(
+                {
+                    "draft_label": draft_label,
+                    "target_parameters": target_params,
+                    "draft_parameters": draft_params,
+                    "cache": cache,
+                    "greedy": greedy,
+                    "warmup_runs": warmup_runs,
+                    "prompt": prompt,
+                    "prompt_tokens": len(ids),
+                    "max_new_tokens": n,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_k": top_k,
+                    "seed": seed,
+                    "draft_length": K,
+                    "baseline_generated_tokens": len(baseline.token_ids),
+                    "baseline_tokens_per_second": baseline.tokens_per_second,
+                    "baseline_time_to_first_token": baseline.time_to_first_token,
+                    "spec_generated_tokens": len(result.token_ids),
+                    "spec_tokens_per_second": result.tokens_per_second,
+                    "spec_time_to_first_token": result.time_to_first_token,
+                    "speedup": result.tokens_per_second / baseline.tokens_per_second,
+                    "acceptance_rate": result.acceptance_rate,
+                    "accepted_per_block": result.accepted_per_block,
+                    "blocks": result.blocks,
+                    "target_forward_passes": result.target_forward_passes,
+                    "draft_forward_passes": result.draft_forward_passes,
+                    "target_seconds": result.target_seconds,
+                    "draft_seconds": result.draft_seconds,
+                }
+            )
     return rows

@@ -64,8 +64,12 @@ def generate(
     for _ in range(max_new_tokens):
         logits, _, _ = model(sequence)
         token = sample_token(
-            logits[0, -1, :], greedy=greedy, temperature=temperature,
-            top_k=top_k, top_p=top_p, generator=generator,
+            logits[0, -1, :],
+            greedy=greedy,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            generator=generator,
         )
         synchronize(device)
         if not output:

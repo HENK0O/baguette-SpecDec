@@ -18,12 +18,18 @@ import torch.nn.functional as F
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from specdec.loader import assert_tokenizer_compatible, load_baguette  # noqa: E402
+from specdec.loader import assert_tokenizer_compatible, load_baguette
 
 
 def choose_device(name: str) -> torch.device:
     if name == "auto":
-        name = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        name = (
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
     return torch.device(name)
 
 
@@ -35,10 +41,14 @@ def synchronize(device: torch.device) -> None:
 
 
 def export_draft(model, config, path: Path, step: int) -> None:
-    weights = {name: tensor.detach().cpu().half() if tensor.is_floating_point()
-               else tensor.detach().cpu() for name, tensor in model.state_dict().items()}
-    torch.save({"model": weights, "model_cfg": config.to_dict(), "step": step,
-                "stage": "distilled-draft"}, path)
+    weights = {
+        name: tensor.detach().cpu().half() if tensor.is_floating_point() else tensor.detach().cpu()
+        for name, tensor in model.state_dict().items()
+    }
+    torch.save(
+        {"model": weights, "model_cfg": config.to_dict(), "step": step, "stage": "distilled-draft"},
+        path,
+    )
 
 
 def distillation_loss(teacher_logits, draft_logits, labels, hard_weight: float):
@@ -46,14 +56,23 @@ def distillation_loss(teacher_logits, draft_logits, labels, hard_weight: float):
     teacher_probs = teacher_log_probs.exp()
     draft_log_probs = F.log_softmax(draft_logits.float(), dim=-1)
     kl = (teacher_probs * (teacher_log_probs - draft_log_probs)).sum(-1).mean()
-    hard = F.cross_entropy(draft_logits.float().reshape(-1, draft_logits.shape[-1]),
-                           labels.reshape(-1))
+    hard = F.cross_entropy(
+        draft_logits.float().reshape(-1, draft_logits.shape[-1]), labels.reshape(-1)
+    )
     return (1 - hard_weight) * kl + hard_weight * hard, kl.detach(), hard.detach()
 
 
 @torch.inference_mode()
-def evaluate(teacher, draft, corpus, batches: int, batch_size: int, seed: int,
-             device: torch.device, hard_weight: float) -> dict:
+def evaluate(
+    teacher,
+    draft,
+    corpus,
+    batches: int,
+    batch_size: int,
+    seed: int,
+    device: torch.device,
+    hard_weight: float,
+) -> dict:
     draft.eval()
     totals = {"val_loss": 0.0, "val_kl": 0.0, "val_hard_ce": 0.0}
     for index in range(batches):
@@ -99,7 +118,7 @@ def main() -> None:
     source = args.baguette_source.resolve()
     sys.path.insert(0, str(source))
     from data import BinCorpus, load_tokenizer
-    from model import ModelConfig, PRESETS, build_model
+    from model import PRESETS, ModelConfig, build_model
 
     tokenizer = load_tokenizer(args.tokenizer)
     device = choose_device(args.device)
@@ -133,13 +152,14 @@ def main() -> None:
         for step in range(1, args.steps + 1):
             start = time.perf_counter()
             x, y, _ = corpus.get_batch(step, args.batch_size, args.seed, str(device))
-            with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16,
-                                                 enabled=use_autocast):
+            with (
+                torch.no_grad(),
+                torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_autocast),
+            ):
                 teacher_logits, _, _ = teacher(x)
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_autocast):
                 draft_logits, _, _ = draft(x)
-            loss, kl, hard = distillation_loss(teacher_logits, draft_logits, y,
-                                               args.hard_weight)
+            loss, kl, hard = distillation_loss(teacher_logits, draft_logits, y, args.hard_weight)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(draft.parameters(), 1.0)
             optimizer.step()
@@ -148,14 +168,25 @@ def main() -> None:
             elapsed = time.perf_counter() - start
             record = None
             if step == 1 or step % args.log_every == 0 or step == args.steps:
-                record = {"step": step, "loss": float(loss.detach()),
-                          "kl": float(kl), "hard_ce": float(hard),
-                          "tokens": step * args.batch_size * args.seq_len,
-                          "tokens_per_second": args.batch_size * args.seq_len / elapsed}
+                record = {
+                    "step": step,
+                    "loss": float(loss.detach()),
+                    "kl": float(kl),
+                    "hard_ce": float(hard),
+                    "tokens": step * args.batch_size * args.seq_len,
+                    "tokens_per_second": args.batch_size * args.seq_len / elapsed,
+                }
             if step % args.save_every == 0 or step == args.steps:
-                validation_metrics = evaluate(teacher, draft, validation, args.eval_batches,
-                                              args.batch_size, args.seed, device,
-                                              args.hard_weight)
+                validation_metrics = evaluate(
+                    teacher,
+                    draft,
+                    validation,
+                    args.eval_batches,
+                    args.batch_size,
+                    args.seed,
+                    device,
+                    args.hard_weight,
+                )
                 if record is None:
                     record = {"step": step}
                 record.update(validation_metrics)

@@ -12,11 +12,11 @@ from tokenizers import Tokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from specdec.baseline import generate  # noqa: E402
-from specdec.cached_generation import generate_cached, generate_speculative_cached  # noqa: E402
-from specdec.loader import assert_tokenizer_compatible, load_baguette  # noqa: E402
-from specdec.speculative import generate_speculative  # noqa: E402
-from specdec.lookup import generate_lookup  # noqa: E402
+from specdec.baseline import generate
+from specdec.cached_generation import generate_cached, generate_speculative_cached
+from specdec.loader import assert_tokenizer_compatible, load_baguette
+from specdec.lookup import generate_lookup
+from specdec.speculative import generate_speculative
 
 
 def main() -> None:
@@ -37,7 +37,9 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--warmup-runs", type=int, default=1)
-    parser.add_argument("--cache", action="store_true", help="use attention KV caches for both models")
+    parser.add_argument(
+        "--cache", action="store_true", help="use attention KV caches for both models"
+    )
     parser.add_argument("--output", type=Path, help="write measured results as JSON")
     args = parser.parse_args()
     args.draft_lengths = args.draft_lengths or ([8] if args.strategy == "auto" else [2, 4, 6, 8])
@@ -51,25 +53,41 @@ def main() -> None:
             parser.error("--strategy draft requires --draft-checkpoint and --draft-tokenizer")
         assert_tokenizer_compatible(args.tokenizer, args.draft_tokenizer)
     if args.device == "auto":
-        name = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        name = (
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps"
+            if torch.backends.mps.is_available()
+            else "cpu"
+        )
     else:
         name = args.device
     device = torch.device(name)
     tokenizer = Tokenizer.from_file(str(args.tokenizer))
     target = load_baguette(args.baguette_source, args.target_checkpoint, device)
-    draft = (load_baguette(args.baguette_source, args.draft_checkpoint, device)
-             if args.strategy == "draft" else None)
+    draft = (
+        load_baguette(args.baguette_source, args.draft_checkpoint, device)
+        if args.strategy == "draft"
+        else None
+    )
     vocab_size = tokenizer.get_vocab_size()
-    if target.cfg.vocab_size != vocab_size or (draft is not None and draft.cfg.vocab_size != vocab_size):
+    if target.cfg.vocab_size != vocab_size or (
+        draft is not None and draft.cfg.vocab_size != vocab_size
+    ):
         raise ValueError("checkpoint vocab size differs from tokenizer")
     ids = tokenizer.encode(args.prompt).ids
     if not ids:
         raise ValueError("prompt produced no tokens")
 
-    settings = dict(max_new_tokens=args.max_new_tokens, greedy=args.greedy,
-                    temperature=args.temperature,
-                    top_k=args.top_k, top_p=args.top_p, seed=args.seed,
-                    eos_id=target.cfg.eos_id)
+    settings = dict(
+        max_new_tokens=args.max_new_tokens,
+        greedy=args.greedy,
+        temperature=args.temperature,
+        top_k=args.top_k,
+        top_p=args.top_p,
+        seed=args.seed,
+        eos_id=target.cfg.eos_id,
+    )
     cache = args.cache or args.strategy == "auto"
     baseline_fn = generate_cached if cache else generate
     speculative_fn = generate_speculative_cached if cache else generate_speculative
@@ -107,26 +125,33 @@ def main() -> None:
         result = run_spec(K, settings)
         if args.greedy and result.token_ids != baseline.token_ids:
             raise RuntimeError(f"greedy speculative output differs from target baseline for K={K}")
-        results["speculative"].append({
-            "draft_length": K,
-            "execution": ("draft" if args.strategy == "draft" else
-                          "lookup" if result.verification_blocks else "target"),
-            "same_tokens": result.token_ids == baseline.token_ids,
-            "verification_blocks": getattr(result, "verification_blocks", result.blocks),
-            "adaptive_blocks": getattr(result, "adaptive_blocks", 0),
-            "discovered_reuse": getattr(result, "discovered_reuse", False),
-            "generated_tokens": len(result.token_ids),
-            "tokens_per_second": result.tokens_per_second,
-            "speedup": result.tokens_per_second / baseline.tokens_per_second,
-            "time_to_first_token": result.time_to_first_token,
-            "total_seconds": result.total_seconds,
-            "acceptance_rate": result.acceptance_rate,
-            "accepted_per_block": result.accepted_per_block,
-            "target_forward_passes": result.target_forward_passes,
-            "draft_forward_passes": result.draft_forward_passes,
-            "target_seconds": result.target_seconds,
-            "draft_seconds": result.draft_seconds,
-        })
+        results["speculative"].append(
+            {
+                "draft_length": K,
+                "execution": (
+                    "draft"
+                    if args.strategy == "draft"
+                    else "lookup"
+                    if result.verification_blocks
+                    else "target"
+                ),
+                "same_tokens": result.token_ids == baseline.token_ids,
+                "verification_blocks": getattr(result, "verification_blocks", result.blocks),
+                "adaptive_blocks": getattr(result, "adaptive_blocks", 0),
+                "discovered_reuse": getattr(result, "discovered_reuse", False),
+                "generated_tokens": len(result.token_ids),
+                "tokens_per_second": result.tokens_per_second,
+                "speedup": result.tokens_per_second / baseline.tokens_per_second,
+                "time_to_first_token": result.time_to_first_token,
+                "total_seconds": result.total_seconds,
+                "acceptance_rate": result.acceptance_rate,
+                "accepted_per_block": result.accepted_per_block,
+                "target_forward_passes": result.target_forward_passes,
+                "draft_forward_passes": result.draft_forward_passes,
+                "target_seconds": result.target_seconds,
+                "draft_seconds": result.draft_seconds,
+            }
+        )
     serialized = json.dumps(results, ensure_ascii=False, indent=2)
     print(serialized)
     if args.output:

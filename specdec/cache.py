@@ -21,8 +21,14 @@ def allocate(model: torch.nn.Module, max_len: int) -> list[dict]:
 
 
 @torch.inference_mode()
-def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], pos: int,
-                *, last_only: bool = False) -> torch.Tensor:
+def forward_all(
+    model: torch.nn.Module,
+    ids: torch.Tensor,
+    caches: list[dict],
+    pos: int,
+    *,
+    last_only: bool = False,
+) -> torch.Tensor:
     """Write T cache positions; optionally project only the final token to logits.
 
     Verification needs all T logits. Prefill and draft catch-up only need the
@@ -38,8 +44,8 @@ def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], p
     if caches and pos + T > caches[0]["k"].shape[2]:
         raise ValueError("cached forward exceeds allocated cache")
     x = model.embed_tokens(ids)
-    cos = model.rope_cos[pos:pos + T]
-    sin = model.rope_sin[pos:pos + T]
+    cos = model.rope_cos[pos : pos + T]
+    sin = model.rope_sin[pos : pos + T]
 
     # One mask is shared by every layer. For a single query, all stored keys
     # are in its past. Prefill can use SDPA's native causal mask; only a block
@@ -60,14 +66,18 @@ def forward_all(model: torch.nn.Module, ids: torch.Tensor, caches: list[dict], p
         q, k = mixer.q_norm(q), mixer.k_norm(k)
         q, k = apply_partial_rope(q, k, cos, sin, mixer.rope_dims)
         q, k, v = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
-        cache["k"][:, :, pos:pos + T] = k
-        cache["v"][:, :, pos:pos + T] = v
-        all_k = cache["k"][:, :, :pos + T]
-        all_v = cache["v"][:, :, :pos + T]
+        cache["k"][:, :, pos : pos + T] = k
+        cache["v"][:, :, pos : pos + T] = v
+        all_k = cache["k"][:, :, : pos + T]
+        all_v = cache["v"][:, :, : pos + T]
 
         attention = F.scaled_dot_product_attention(
-            q, repeat_kv(all_k, mixer.n_rep), repeat_kv(all_v, mixer.n_rep),
-            attn_mask=causal_mask, is_causal=(T > 1 and pos == 0), dropout_p=0.0,
+            q,
+            repeat_kv(all_k, mixer.n_rep),
+            repeat_kv(all_v, mixer.n_rep),
+            attn_mask=causal_mask,
+            is_causal=(T > 1 and pos == 0),
+            dropout_p=0.0,
         )
         attention = attention.transpose(1, 2).reshape(B, T, mixer.n_head * mixer.head_dim)
         if mixer.gate_proj is not None:
