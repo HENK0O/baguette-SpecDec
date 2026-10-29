@@ -10,19 +10,19 @@ permissions:
 jobs:
   python:
     name: Python style and tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Get the Baguette architecture for cache tests
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: HENK0O/baguette
           ref: ba8f770f706b8f427bf7b10925d0dcfb137a7813
           path: .baguette-source
           sparse-checkout: model.py
           sparse-checkout-cone-mode: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
